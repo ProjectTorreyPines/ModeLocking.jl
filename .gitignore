@@ -1,0 +1,5 @@
+# Generated ODE results and NN model checkpoints
+data/*.bson
+
+# Julia build artifacts
+Manifest.toml

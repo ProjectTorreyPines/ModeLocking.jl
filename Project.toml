@@ -1,0 +1,27 @@
+name = "ModeLocking"
+uuid = "5e70283d-1540-41fb-887a-dc809e1bfac9"
+authors = ["Ozgur Akcay"]
+version = "0.1.0"
+
+[deps]
+BSON = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
+Clustering = "aaaa29a8-35af-508c-8bc3-b662a17a0fe5"
+DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
+Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
+Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+
+[compat]
+BSON = "0.3"
+Clustering = "0.15"
+DifferentialEquations = "7"
+Flux = "0.14, 0.15, 0.16"
+Plots = "1"
+julia = "1.10"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
