@@ -17,7 +17,6 @@ Base.@kwdef mutable struct ODEparams
     rat_surface::Float64      = 0.67  # q=2 surface location (dimensionless)
     res_wall::Float64         = 1.0   # resistive wall location (dimensionless)
     control_surf::Float64     = 1.25  # control surface location (dimensionless)
-    m_pol::Float64            = 2.0   # poloidal mode number of the perturbation (for EF flux-equivalent conversion)
     mu::Float64               = 0.1   # anomalous perpendicular plasma viscosity
     Inertia::Float64          = 0.1   # moment of inertia of the layer
     Taut_Tauw::Float64        = 1.0   # ratio of tearing time to wall time
@@ -25,7 +24,7 @@ Base.@kwdef mutable struct ODEparams
     Control1_min::Float64     = 1.0e-2
     Control1_max::Float64     = 10.0
     Control2_min::Float64     = 0.01
-    Control2_max::Float64     = 1.0
+    Control2_max::Float64     = 10.0
 
     # --- computed at run time by calculate_stability_index! ---
     DeltaW::Float64          = NaN  # intrinsic RW stability — calculated at run time

@@ -11,17 +11,22 @@ const _locking_nn_cache = Dict{String, LockingNNModel}()
 
 """
     save_ode_results(results::LockingResults, ode_params::ODEparams;
-                      filename="ode_results.bson", dir=LOCKING_RESULTS_DIR) → path
+                      control_type=:EF, filename=nothing, dir=LOCKING_RESULTS_DIR) → path
 
 Save the ODE grid results to disk so that `task=:calc_prob` can be run in a
 future session without re-solving the ODEs.  Saves: ode_sols, norm_sols,
 locking_labels, bifurcation_bounds, Control1, Control2.
+
+When `filename` is omitted the file is named `ode_results_<control_type>.bson`
+(e.g. `ode_results_EF.bson`, `ode_results_LinStab.bson`).
 """
 function save_ode_results(results::LockingResults, ode_params::ODEparams;
-                           filename::String = "ode_results.bson",
-                           dir::String      = LOCKING_RESULTS_DIR)
+                           control_type::Symbol          = :EF,
+                           filename::Union{String,Nothing} = nothing,
+                           dir::String                     = LOCKING_RESULTS_DIR)
     mkpath(dir)
-    path = joinpath(dir, filename)
+    fname = filename === nothing ? "ode_results_$(control_type).bson" : filename
+    path  = joinpath(dir, fname)
     ode_sols           = results.ode_sols
     norm_sols          = results.norm_sols
     locking_labels     = results.locking_labels
@@ -35,16 +40,21 @@ end
 
 
 """
-    load_ode_results(; filename="ode_results.bson", dir=LOCKING_RESULTS_DIR)
+    load_ode_results(; control_type=:EF, filename=nothing, dir=LOCKING_RESULTS_DIR)
         → (results::LockingResults, Control1::Vector{Float64}, Control2::Vector{Float64})
 
 Load previously saved ODE results from disk. Callers (e.g. FUSE's
 `ActorLocking`) should assign the returned `results` to `actor.results` and
 `Control1`/`Control2` to `actor.ode_params.Control1`/`Control2`.
+
+When `filename` is omitted the file is looked up as
+`ode_results_<control_type>.bson`.
 """
-function load_ode_results(; filename::String = "ode_results.bson",
-                           dir::String      = LOCKING_RESULTS_DIR)
-    path = joinpath(dir, filename)
+function load_ode_results(; control_type::Symbol          = :EF,
+                            filename::Union{String,Nothing} = nothing,
+                            dir::String                     = LOCKING_RESULTS_DIR)
+    fname = filename === nothing ? "ode_results_$(control_type).bson" : filename
+    path  = joinpath(dir, fname)
     isfile(path) || error("No saved ODE results at $path — run task=:solve_system first")
     d = BSON.load(path, @__MODULE__)
     results = LockingResults(
@@ -60,16 +70,21 @@ end
 
 
 """
-    save_locking_nn(model::LockingNNModel; filename="nn_model.bson", dir=LOCKING_RESULTS_DIR) → path
+    save_locking_nn(model::LockingNNModel; control_type=:EF, filename=nothing,
+                    dir=LOCKING_RESULTS_DIR) → path
 
 Save a trained `LockingNNModel` to disk.
 Default location: `ModeLocking/data/`
+
+When `filename` is omitted the file is named `nn_model_<control_type>.bson`.
 """
 function save_locking_nn(prob_model::LockingNNModel;
-                          filename::String = "nn_model.bson",
-                          dir::String      = LOCKING_RESULTS_DIR)
+                          control_type::Symbol          = :EF,
+                          filename::Union{String,Nothing} = nothing,
+                          dir::String                     = LOCKING_RESULTS_DIR)
     mkpath(dir)
-    path      = joinpath(dir, filename)
+    fname     = filename === nothing ? "nn_model_$(control_type).bson" : filename
+    path      = joinpath(dir, fname)
     model     = prob_model.model
     nn_params = prob_model.nn_params
     BSON.@save path model nn_params
@@ -79,13 +94,19 @@ end
 
 
 """
-    load_locking_nn(; filename="nn_model.bson", dir=LOCKING_RESULTS_DIR) → LockingNNModel
+    load_locking_nn(; control_type=:EF, filename=nothing, dir=LOCKING_RESULTS_DIR)
+        → LockingNNModel
 
 Load a saved LockingNNModel from disk. Cached in memory after first load.
+
+When `filename` is omitted the file is looked up as
+`nn_model_<control_type>.bson`.
 """
-function load_locking_nn(; filename::String = "nn_model.bson",
-                           dir::String      = LOCKING_RESULTS_DIR)
-    path = joinpath(dir, filename)
+function load_locking_nn(; control_type::Symbol          = :EF,
+                           filename::Union{String,Nothing} = nothing,
+                           dir::String                     = LOCKING_RESULTS_DIR)
+    fname = filename === nothing ? "nn_model_$(control_type).bson" : filename
+    path  = joinpath(dir, fname)
     haskey(_locking_nn_cache, path) && return _locking_nn_cache[path]
     isfile(path) || error("No saved model at $path — run save_locking_nn first")
     d = BSON.load(path, @__MODULE__)

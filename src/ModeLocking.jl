@@ -7,6 +7,7 @@ import BSON
 using Plots
 using Clustering
 using Distributed
+import Roots
 
 include("types.jl")
 include("dynamics.jl")

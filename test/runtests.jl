@@ -6,10 +6,10 @@ using Plots
 
 # A representative set of derived quantities, matching what
 # FUSE.calculate_stability_index!/set_phys_params! would compute for the
-# default n_mode=1, rat_surface=0.67, res_wall=1.0, control_surf=1.25,
+# default m_pol=2, rat_surface=0.67, res_wall=1.0, control_surf=1.25,
 # RPRW_stability_index=-0.5 case.
-function _test_ode_params(; control_type=:EF, NL_saturation_ON=false)
-    sat = NL_saturation_ON ? 0.1 : 0.0
+function _test_ode_params(; control_type=:EF, NL_saturation=false)
+    sat = NL_saturation ? 0.1 : 0.0
     return ODEparams(;
         rat_surface = 0.67,
         res_wall    = 1.0,
@@ -39,7 +39,7 @@ end
 
     @testset "resolve_control" begin
         for control_type in (:EF, :LinStab, :NLsaturation)
-            op = _test_ode_params(; control_type, NL_saturation_ON=(control_type == :NLsaturation))
+            op = _test_ode_params(; control_type, NL_saturation=(control_type == :NLsaturation))
             C2 = control_type == :LinStab ? -2.0 : 0.2
             sc = ModeLocking.resolve_control(op, control_type, C2)
             @test all(isfinite, (sc.Deltat, sc.eps, sc.alpha, sc.DeltatRW))
@@ -60,7 +60,7 @@ end
 
     @testset "solve_ODEs" begin
         for application in ("RP-RW", "RP-IW"), control_type in (:EF, :LinStab, :NLsaturation)
-            op = _test_ode_params(; control_type, NL_saturation_ON=(control_type == :NLsaturation))
+            op = _test_ode_params(; control_type, NL_saturation=(control_type == :NLsaturation))
             C1 = 1.0
             C2 = control_type == :LinStab ? -2.0 : 0.2
             final = ModeLocking.solve_ODEs(op, application, 1, control_type, 10.0, 20, C1, C2)
@@ -106,7 +106,7 @@ end
         @test all(isfinite, results.bifurcation_bounds)
 
         # NL saturation suppresses bifurcation bounds
-        op2 = _test_ode_params(; control_type=:NLsaturation, NL_saturation_ON=true)
+        op2 = _test_ode_params(; control_type=:NLsaturation, NL_saturation=true)
         op2.Control1 = op.Control1
         op2.Control2 = vec(repeat(range(0.05, 0.3, length=grid_size)', grid_size, 1))
         results2 = ModeLocking.solve_and_classify(op2, "RP-RW", 1, :NLsaturation, 10.0, 20, true, grid_size)
