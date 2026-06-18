@@ -1,6 +1,6 @@
 name = "ModeLocking"
 uuid = "5e70283d-1540-41fb-887a-dc809e1bfac9"
-authors = ["Ozgur Akcay"]
+authors = ["Cihan Akcay"]
 version = "0.2.0"
 
 [deps]
