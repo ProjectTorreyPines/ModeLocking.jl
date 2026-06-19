@@ -283,7 +283,7 @@ Two stacked pcolor panels of normalised solutions over the (C2, C1) control spac
 Analytic bifurcation boundary (D = 0) overlaid in black when NL saturation is off.
 """
 function plot_phase_diagrams(results::LockingResults, ode_params::ODEparams, grid_size::Int, control_type::Symbol;
-                             b0::Float64=NaN, t0::Float64=NaN, m_pol::Float64=NaN)
+                             b0::Float64=NaN, t0::Float64=NaN, m_pol::Float64=NaN, orientation::Symbol=:portrait)
     r  = results
     gs = grid_size
     x  = unique(ode_params.Control2)   # Control2 values  (x-axis)
@@ -291,22 +291,31 @@ function plot_phase_diagrams(results::LockingResults, ode_params::ODEparams, gri
 
     OmN_grid   = reshape(r.norm_sols[:, 3], gs, gs)   # Ω_n   (rows=C1, cols=C2)
     PsiTN_grid = reshape(r.norm_sols[:, 1], gs, gs)   # ψ_tn  (rows=C1, cols=C2)
+    bb         = r.bifurcation_bounds                  # local; may be reversed below
 
     # Convert axes to physical units when normalization scales are available
     if control_type == :EF && !isnan(b0) && !isnan(m_pol)
-        x          = x .* (m_pol / ode_params.control_surf) .* b0 .* 1e4
+        x           = x .* (m_pol / ode_params.control_surf) .* b0 .* 1e4
         xlabel_ctrl = "Error Field (Gauss)"
+    elseif control_type == :NLsaturation
+        # 1/α inverts sort order — reverse x and all column-ordered matrices
+        x           = reverse(1.0 ./ x)
+        OmN_grid    = reverse(OmN_grid,   dims=2)
+        PsiTN_grid  = reverse(PsiTN_grid, dims=2)
+        bb          = bb === nothing ? nothing : reverse(bb, dims=2)
+        xlabel_ctrl = "1/α"
     else
         xlabel_ctrl = _ctrl_xlabel(control_type)
     end
     if !isnan(t0)
-        y          = y ./ ( t0 * 1e3)
+        y          = y ./ (t0 * 1e3)
         ylabel_str = "Ω₀ (2π*kHz)"
     else
         ylabel_str = "Ω₀"
     end
 
     xr = extrema(x); yr = extrema(y)
+    bot_margin = orientation == :landscape ? 12Plots.mm : 4Plots.mm
 
     # ── (a) Ω_n ─────────────────────────────────────────────────────────────
     p_a = heatmap(x, y, OmN_grid;
@@ -317,14 +326,18 @@ function plot_phase_diagrams(results::LockingResults, ode_params::ODEparams, gri
         colorbar_title = "Ω_n",
         clims          = (0.0, 1.0),
         left_margin    = 8Plots.mm,
+        bottom_margin  = bot_margin,
+        guidefontsize  = 14,
+        tickfontsize   = 12,
+        titlefontsize  = 18,
     )
-    _overlay_bifurcation!(p_a, x, y, r.bifurcation_bounds)
+    _overlay_bifurcation!(p_a, x, y, bb)
     annotate!(p_a, xr[1]+0.05*(xr[2]-xr[1]), yr[1]+0.85*(yr[2]-yr[1]),
-              Plots.text("UNLOCKED", 14, :white, :left))
+              Plots.text("UNLOCKED", 18, :white, :left))
     annotate!(p_a, xr[1]+0.65*(xr[2]-xr[1]), yr[1]+0.05*(yr[2]-yr[1]),
-              Plots.text("LOCKED",   14, :white, :left))
+              Plots.text("LOCKED",   18, :white, :left))
     annotate!(p_a, xr[1]+0.01*(xr[2]-xr[1]), yr[1]+0.05*(yr[2]-yr[1]),
-              Plots.text("(a)", 12, :white, :left))
+              Plots.text("(a)", 15, :white, :left))
 
     # ── (b) ψ_tn ────────────────────────────────────────────────────────────
     p_b = heatmap(x, y, PsiTN_grid;
@@ -335,16 +348,22 @@ function plot_phase_diagrams(results::LockingResults, ode_params::ODEparams, gri
         colorbar_title = "ψ_tn",
         clims          = (0.0, 1.0),
         left_margin    = 8Plots.mm,
+        bottom_margin  = bot_margin,
+        guidefontsize  = 14,
+        tickfontsize   = 12,
+        titlefontsize  = 18,
     )
-    _overlay_bifurcation!(p_b, x, y, r.bifurcation_bounds)
+    _overlay_bifurcation!(p_b, x, y, bb)
     annotate!(p_b, xr[1]+0.05*(xr[2]-xr[1]), yr[1]+0.85*(yr[2]-yr[1]),
-              Plots.text("UNLOCKED", 14, :white, :left))
+              Plots.text("UNLOCKED", 18, :white, :left))
     annotate!(p_b, xr[1]+0.65*(xr[2]-xr[1]), yr[1]+0.05*(yr[2]-yr[1]),
-              Plots.text("LOCKED",   14, :white, :left))
+              Plots.text("LOCKED",   18, :white, :left))
     annotate!(p_b, xr[1]+0.01*(xr[2]-xr[1]), yr[1]+0.05*(yr[2]-yr[1]),
-              Plots.text("(b)", 12, :white, :left))
+              Plots.text("(b)", 15, :white, :left))
 
-    plt = plot(p_a, p_b; layout=(2, 1), size=(650, 1100))
+    plt = orientation == :landscape ?
+        plot(p_a, p_b; layout=(1, 2), size=(1300, 600)) :
+        plot(p_a, p_b; layout=(2, 1), size=(650, 1100))
     return plt
 end
 
@@ -364,13 +383,18 @@ function plot_probability(results::LockingResults, ode_params::ODEparams, contro
     r = results
     r.prob === nothing && error("No trained NN model — run train_locking_nn first")
 
-    x = unique(ode_params.Control2)   # Control2 (x-axis)
-    y = unique(ode_params.Control1)   # Control1/Ω0 (y-axis)
+    x_ctrl = unique(ode_params.Control2)   # original Control2 — always used for NN eval
+    x      = copy(x_ctrl)                  # display axis — may be transformed below
+    y      = unique(ode_params.Control1)
 
     # Convert axes to physical units when normalization scales are available
     if control_type == :EF && !isnan(b0) && !isnan(m_pol)
         x           = x .* (m_pol / ode_params.control_surf) .* b0 .* 1e4
         xlabel_ctrl = "Error Field (Gauss)"
+    elseif control_type == :NLsaturation
+        # 1/α inverts sort order — reverse display axis and grid columns to match
+        x           = reverse(1.0 ./ x)
+        xlabel_ctrl = "1/α"
     else
         xlabel_ctrl = _ctrl_xlabel(control_type)
     end
@@ -379,7 +403,12 @@ function plot_probability(results::LockingResults, ode_params::ODEparams, contro
         y = y ./ (t0 * 1e3)
     end
 
-    prob_grid = [r.prob(c1, c2) for c1 in y, c2 in x]
+    prob_grid = [r.prob(c1, c2) for c1 in y, c2 in x_ctrl]
+    bb = r.bifurcation_bounds
+    if control_type == :NLsaturation
+        prob_grid = reverse(prob_grid, dims=2)
+        bb        = bb === nothing ? nothing : reverse(bb, dims=2)
+    end
     xr = extrema(x); yr = extrema(y)
 
     plt = contourf(x, y, prob_grid;
@@ -390,21 +419,26 @@ function plot_probability(results::LockingResults, ode_params::ODEparams, contro
         clims          = (0.0, 1.0),
         levels         = 20,
         color          = cgrad(:RdBu, rev=true),
+        colorbar       = true,
+        left_margin    = 8Plots.mm,
+        guidefontsize  = 14,
+        tickfontsize   = 12,
+        titlefontsize  = 18,
     )
     contour!(plt, x, y, prob_grid;
         levels    = [0.5],
         linecolor = :black,
         linestyle = :dash,
-        linewidth = 2,
+        linewidth = 2.5,
         colorbar  = false,
         label     = "P = 0.5",
     )
-    _overlay_bifurcation!(plt, x, y, r.bifurcation_bounds; color=:yellow, style=:dash)
+    _overlay_bifurcation!(plt, x, y, bb; color=:yellow, style=:dash)
 
     annotate!(plt, xr[1]+0.05*(xr[2]-xr[1]), yr[1]+0.85*(yr[2]-yr[1]),
-              Plots.text("UNLOCKED", 14, :white, :left))
+              Plots.text("UNLOCKED", 18, :white, :left))
     annotate!(plt, xr[1]+0.70*(xr[2]-xr[1]), yr[1]+0.05*(yr[2]-yr[1]),
-              Plots.text("LOCKED",   14, :white, :left))
+              Plots.text("LOCKED",   18, :white, :left))
 
     return plt
 end
