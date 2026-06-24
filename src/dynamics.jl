@@ -10,7 +10,7 @@ function make_rhs_function(application::String)
 end
 
 "Right-hand side for the rational-surface + resistive-wall (RP-RW) system"
-function rhs_RW!(dydt, y, t, Control2::Float64, C1::Float64, ode_params::ODEparams, n_tor::Int, control_type::Symbol)
+function rhs_RW!(dydt, y, t, Control2::Float64, C1::Float64, thEF::Float64, ode_params::ODEparams, n_tor::Int, control_type::Symbol)
     n0 = n_tor
     DeltaW = ode_params.DeltaW
     rt = ode_params.rat_surface
@@ -28,12 +28,12 @@ function rhs_RW!(dydt, y, t, Control2::Float64, C1::Float64, ode_params::ODEpara
     dydt[1] = Deltat * psi * (1.0 + alpha * abs(psi)) + l21 * psiW * cos(theta - thW)
     dydt[2] = -n0 * Om - l21 * psiW * sin(theta - thW) / psi
     dydt[3] = (rt * l21 * psiW * psi * sin(theta - thW) + mu * (C1 - Om)) / I
-    dydt[4] = Tt_Tw * (DeltaW * psiW + l12 * psi * cos(theta - thW) + l32 * errF * cos(thW))
-    dydt[5] = Tt_Tw * (l12 * psi * sin(theta - thW) - l32 * errF * sin(thW)) / psiW
+    dydt[4] = Tt_Tw * (DeltaW * psiW + l12 * psi * cos(theta - thW) + l32 * errF * sin(thEF - thW))
+    dydt[5] = Tt_Tw * (l12 * psi * sin(theta - thW) - l32 * errF * cos(thEF - thW)) / psiW
 end
 
 "Right-hand side for the rational-surface + ideal-wall (RP-IW) system"
-function rhs_basic!(dydt, y, t, Control2::Float64, C1::Float64, ode_params::ODEparams, n_tor::Int, control_type::Symbol)
+function rhs_basic!(dydt, y, t, Control2::Float64, C1::Float64, thEF::Float64, ode_params::ODEparams, n_tor::Int, control_type::Symbol)
     n0 = n_tor
     rt = ode_params.rat_surface
     l21 = ode_params.l21
@@ -44,9 +44,9 @@ function rhs_basic!(dydt, y, t, Control2::Float64, C1::Float64, ode_params::ODEp
 
     psi, theta, Om = y
 
-    dydt[1] = Deltat * psi * (1.0 + alpha * abs(psi)) + l21 * errF * cos(theta)
-    dydt[2] = -n0 * Om - l21 * errF * sin(theta) / psi
-    dydt[3] = (rt * l21 * errF * psi * sin(theta) + mu * (C1 - Om)) / I
+    dydt[1] = Deltat * psi * (1.0 + alpha * abs(psi)) + l21 * errF * sin(thEF - theta)
+    dydt[2] = -n0 * Om - l21 * errF * cos(thEF - theta) / psi
+    dydt[3] = (rt * l21 * errF * psi * cos(thEF - theta) + mu * (C1 - Om)) / I
 end
 
 "Random initial condition inside the hyper-cube `dims`, for the given application"
@@ -77,11 +77,10 @@ end
 "Wrap an `rhs!` function into the `(du, u, p, t)` signature expected by `ODEProblem`"
 function make_ode_func(rhs!)
     return function (du, u, p, t)
-        # p layout: (C2, C1, ode_params, n_tor, control_type)
+        # p layout: (C2, C1, EFphase, ode_params, n_tor, control_type)
         # C2 = swept control param (EF / Δ′ / α); C1 = rotation frequency
-        # This matches the argument order of rhs_RW! and rhs_basic!
-        C2, C1, ode_params, n_tor, control_type = p
-        rhs!(du, u, t, C2, C1, ode_params, n_tor, control_type)
+        C2, C1, EFphase, ode_params, n_tor, control_type = p
+        rhs!(du, u, t, C2, C1, EFphase, ode_params, n_tor, control_type)
     end
 end
 
@@ -181,20 +180,21 @@ Solve the reduced-order ODE system for one (C1, C2) point on the control grid.
 - `time_steps`    : number of saved time steps when `full_output=true`
 - `C1`            : rotation-frequency control value
 - `C2`            : swept control value (EF / Δ′ / α, depending on `control_type`)
+- `EFphase`       : EF phase from actor.par
 
 When `full_output=false` (default), returns only the final state vector
 (`sol.u[end]`) — used for grid scans. When `full_output=true`, returns the
 full time-resolved `ODESolution` — used for single-case time traces.
 """
-function solve_ODEs(ode_params::ODEparams, application::String, n_tor::Int, control_type::Symbol,
+function solve_ODEs(ode_params::ODEparams, application::String, n_tor::Int, EFphase::Float64, control_type::Symbol,
                      t_final::Real, time_steps::Int, C1::Float64, C2::Float64; full_output::Bool=false)
     rhs!     = make_rhs_function(application)
     ode_rhs! = make_ode_func(rhs!)
     y0 = make_initial_condition(ode_params.hyper_cube_dims, application)
 
-    # rhs! expects (C2, C1) as its first two positional args — swap once here so
+    # rhs! expects (C2, C1, EFphase, ...) as positional args — swap once here so
     # all callers use the natural (C1, C2) convention
-    p = (C2, C1, ode_params, n_tor, control_type)
+    p = (C2, C1, EFphase, ode_params, n_tor, control_type)
     tspan = (0.0, Float64(t_final))
 
     prob = ODEProblem(ode_rhs!, y0, tspan, p)
@@ -321,8 +321,8 @@ Solve the reduced-order ODE system over the full `(Control1, Control2)` grid
 stored in `ode_params`, in parallel via `pmap`. Returns a `(N*M × n_states)`
 matrix of final states (one row per grid point, in `Control1`/`Control2` order).
 """
-function solve_grid(ode_params::ODEparams, application::String, n_tor::Int, control_type::Symbol,
-                     t_final::Real, time_steps::Int)
+function solve_grid(ode_params::ODEparams, application::String, n_tor::Int, EFphase::Float64,
+                    control_type::Symbol,t_final::Real, time_steps::Int)
     println("Solving the FULL system, this may take a few seconds")
 
     # Control1 = C1 (rotation, Y-axis), Control2 = C2 = EF/Δ′/α (X-axis)
@@ -337,7 +337,7 @@ function solve_grid(ode_params::ODEparams, application::String, n_tor::Int, cont
 
     # Parallel map over the grid, returning final states as a (N*M × n_states) matrix
     finals = pmap(inputs) do (C1, C2)
-        solve_ODEs(ode_params_send, application, n_tor, control_type, t_final, time_steps, C1, C2)
+        solve_ODEs(ode_params_send, application, n_tor, EFphase, control_type, t_final, time_steps, C1, C2)
     end
 
     return Matrix(reduce(hcat, finals)')  # Vector{Vector} → Matrix{Float64} (N*M × n_states)
@@ -352,11 +352,11 @@ Solve the full control grid (`solve_grid`), normalize the results, classify
 into "locked"/"unlocked" via k-means on `(psiN, OmN)`, and (unless NL
 saturation is active) compute the analytic bifurcation boundary.
 """
-function solve_and_classify(ode_params::ODEparams, application::String, n_tor::Int, control_type::Symbol,
-                              t_final::Real, time_steps::Int, NL_saturation::Bool, grid_size::Int)
+function solve_and_classify(ode_params::ODEparams, application::String, n_tor::Int, EFphase::Float64,
+                            control_type::Symbol,t_final::Real, time_steps::Int, NL_saturation::Bool, grid_size::Int)
     control1 = ode_params.Control1
     control2 = ode_params.Control2
-    ode_sols = solve_grid(ode_params, application, n_tor, control_type, t_final, time_steps)
+    ode_sols = solve_grid(ode_params, application, n_tor, EFphase, control_type, t_final, time_steps)
     norm_sols = normalize_ode_results(ode_sols, ode_params, control2, control1, control_type)
 
     ## classify normalized solutions
@@ -503,7 +503,7 @@ value (`stability_index`, `error_field`, or `saturation_param`, depending on
 `control_type`), and return both the raw `ODESolution` (for physical-unit
 plotting) and the normalized time traces `norm_t` (n_times × n_states).
 """
-function simulate_one_case(ode_params::ODEparams, application::String, n_tor::Int, control_type::Symbol,
+function simulate_one_case(ode_params::ODEparams, application::String, n_tor::Int, EFphase::Float64, control_type::Symbol,
                             source_torque::Real, t_final::Real, time_steps::Int)
     control1 = Float64(source_torque)
 
@@ -519,7 +519,7 @@ function simulate_one_case(ode_params::ODEparams, application::String, n_tor::In
         control2 = 0.5
     end
 
-    sol = solve_ODEs(ode_params, application, n_tor, control_type, t_final, time_steps, control1, control2; full_output=true)
+    sol = solve_ODEs(ode_params, application, n_tor, EFphase, control_type, t_final, time_steps, control1, control2; full_output=true)
 
     norm_t = reduce(vcat, (normalize_ode_results(u, ode_params, control2, control1, control_type)'
                             for u in sol.u))

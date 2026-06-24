@@ -12,7 +12,7 @@ Pure-physics parameters for the reduced-order tearing-mode / resistive-wall-mode
 Base.@kwdef mutable struct ODEparams
     # --- user-set physical parameters (sensible defaults) ---
     saturation_param::Float64 = 0.2   # controls nonlinear island saturation
-    error_field::Float64      = 0.5   # fixed error field when control_type is NOT :EF
+    error_field::Float64      = 10.   # fixed error field (Gauss) when control_type is NOT :EF
     layer_width::Float64      = 1e-3  # resistive layer width from tearing theory (~1 mm)
     rat_surface::Float64      = 0.67  # q=2 surface location (dimensionless)
     res_wall::Float64         = 1.0   # resistive wall location (dimensionless)
@@ -43,7 +43,7 @@ Base.@kwdef struct NNparams
     hidden_sizes::Vector{Int}  = [100, 100, 100]  # neurons in each hidden layer
     activation::Symbol         = :relu             # :tanh, :relu, :sigmoid
     learning_rate::Float64     = 1e-3
-    n_epochs::Int              = 1000
+    n_epochs::Int              = 200
     batch_size::Int            = 200
     weight_decay::Float64      = 1e-8              # L2 regularisation coefficient
     val_fraction::Float64      = 0.0               # fraction held out for early stopping; 0 = disabled

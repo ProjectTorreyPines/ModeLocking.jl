@@ -14,23 +14,31 @@ secondary (right) y-axis, all on a single labeled plot.
 states (as produced by `normalize_ode_results` applied to each `sol.u[i]`),
 and `t` is the corresponding vector of times (`sol.t`).
 """
-function plot_time_traces(norm_t::AbstractMatrix{<:Real}, t::AbstractVector{<:Real})
-
+function plot_time_traces(norm_t::AbstractMatrix{<:Real}, t::AbstractVector{<:Real};
+                          t0::Real=NaN)
     psi_tN = norm_t[:, 1]
     Om_tN  = norm_t[:, 3]
 
-    plt = plot(t, psi_tN; xlabel="time", ylabel="Normalized ψ", label="ψ_tN (TM)",
+    t_plot, xlabel_t = if !isnan(t0)
+        t .* t0 .* 1e3, "time (ms)"
+    else
+        t, "time"
+    end
+
+    plt = plot(t_plot, psi_tN; xlabel=xlabel_t, ylabel="Normalized ψ", label="ψ_tN (TM)",
                lw=4, color=:steelblue, title="Time-dependent traces",
-               legend=(0.5, 0.5), legendfontsize=12)
+               legend=:topleft, legendfontsize=12, ylims=(0, 1.05))
 
     if size(norm_t, 2) == 5 # RP-RW layout includes the resistive-wall-mode state
         psi_wN = norm_t[:, 4]
-        plot!(plt, t, psi_wN; label="ψ_wN (RWM)", lw=4, color=:darkorange)
+        plot!(plt, t_plot, psi_wN; label="ψ_wN (RWM)", lw=4, color=:darkorange)
     end
 
-    # Ω_tN on its own scale on the right y-axis
-    plot!(twinx(plt), t, Om_tN; ylabel="Ω_tN", label="Ω_tN", lw=4,
-          color=:firebrick, linestyle=:dash, legend=(0.5, 0.5), legendfontsize=12)
+    # Ω_tN on its own scale on the right y-axis; cap at 1+ε since Ω_tN ∈ [0,1]
+    ax2 = twinx(plt)
+    plot!(ax2, t_plot, Om_tN; ylabel="Ω_tN", label="Ω_tN", lw=4,
+          color=:firebrick, linestyle=:dash, legend=:bottomright, legendfontsize=12)
+    ylims!(ax2, 0, 1.05)
 
     return plt
 end
@@ -55,25 +63,29 @@ Same layout as `plot_time_traces(norm_t, t)`, but using the *raw*
 function plot_time_traces(sol::ODESolution, norm_vec::AbstractVector{<:Real})
 
     b0, t0, r0 = norm_vec[1], norm_vec[2], norm_vec[3]
-    mag_factor  = r0 * b0 * 1.e4     # ψ (dimensionless) → Gauss
-    freq_factor = 1.e-3 / (t0)  # Ω (dimensionless) → 2π*kHz
+    # ψ_ode is normalized to b0 (errF = EF_Gauss*1e-4/b0 → dimensionless).
+    # δB[T] = ψ_ode * b0  →  δB[Gauss] = ψ_ode * b0 * 1e4
+    mag_factor  = b0 * 1.e4
+    freq_factor = 1.e-3 / t0   # Ω (dimensionless) → 2π*kHz
 
-    t       = sol.t
+    t_ms    = sol.t .* t0 .* 1e3   # dimensionless ODE time → ms
     psi_G   = [u[1] for u in sol.u] .* mag_factor
     Om_kHz  = [u[3] for u in sol.u] .* freq_factor
 
-    plt = plot(t, psi_G; xlabel="time", ylabel="δB (Gauss)", label="ψ (TM)",
+    plt = plot(t_ms, psi_G; xlabel="time (ms)", ylabel="δB (Gauss)", label="ψ (TM)",
                lw=4, color=:steelblue, title="Time-dependent traces (physical units)",
-               legend=(0.5, 0.5), legendfontsize=12)
+               legend=:topleft, legendfontsize=12)
 
     if length(sol.u[1]) == 5 # RP-RW layout includes the resistive-wall-mode state
         psiW_G = [u[4] for u in sol.u] .* mag_factor
-        plot!(plt, t, psiW_G; label="ψ_W (RWM)", lw=4, color=:darkorange)
+        plot!(plt, t_ms, psiW_G; label="ψ_W (RWM)", lw=4, color=:darkorange)
     end
 
     # Ω in kHz on its own scale on the right y-axis
-    plot!(twinx(plt), t, Om_kHz; ylabel="Ω (kHz)", label="Ω", lw=4,
-          color=:firebrick, linestyle=:dash, legend=(0.5, 0.5), legendfontsize=12)
+    ax2 = twinx(plt)
+    plot!(ax2, t_ms, Om_kHz; ylabel="Ω (kHz)", label="Ω", lw=4,
+          color=:firebrick, linestyle=:dash, legend=:bottomright, legendfontsize=12)
+    ylims!(ax2, 0, maximum(Om_kHz) * 1.05)
 
     return plt
 end
@@ -421,16 +433,16 @@ function plot_probability(results::LockingResults, ode_params::ODEparams, contro
         color          = cgrad(:RdBu, rev=true),
         colorbar       = true,
         left_margin    = 8Plots.mm,
+        right_margin   = 4Plots.mm,
         guidefontsize  = 14,
         tickfontsize   = 12,
-        titlefontsize  = 18,
+        titlefontsize  = 16,
     )
     contour!(plt, x, y, prob_grid;
         levels    = [0.5],
         linecolor = :black,
         linestyle = :dash,
         linewidth = 2.5,
-        colorbar  = false,
         label     = "P = 0.5",
     )
     _overlay_bifurcation!(plt, x, y, bb; color=:yellow, style=:dash)
