@@ -102,11 +102,12 @@ available) `plot_probability`.  Returns all three handles; fig3 is `nothing`
 when no model has been trained yet.
 """
 function plot_sols(results::LockingResults, ode_params::ODEparams, grid_size::Int, control_type::Symbol;
-                   b0::Float64=NaN, t0::Float64=NaN, m_pol::Float64=NaN, orientation::Symbol=:portrait)
-    fig1 = plot_scatter(results; orientation); display(fig1)
-    fig2 = plot_phase_diagrams(results, ode_params, grid_size, control_type; b0, t0, m_pol); display(fig2)
+                   b0::Float64=NaN, t0::Float64=NaN, m_pol::Float64=NaN, orientation::Symbol=:portrait,
+                   shot_label::String="")
+    fig1 = plot_scatter(results; orientation, shot_label); display(fig1)
+    fig2 = plot_phase_diagrams(results, ode_params, grid_size, control_type; b0, t0, m_pol, orientation, shot_label); display(fig2)
     fig3 = (results.prob !== nothing) ?
-           (p = plot_probability(results, ode_params, control_type; b0, t0, m_pol); display(p); p) : nothing
+           (p = plot_probability(results, ode_params, control_type; b0, t0, m_pol, shot_label); display(p); p) : nothing
     return fig1, fig2, fig3
 end
 
@@ -130,7 +131,7 @@ RP-IW (3-state):
   Portrait (2×1): (a) on top, (b) below
   Landscape (1×2): (a) | (b) side by side
 """
-function plot_scatter(results::LockingResults; orientation::Symbol=:portrait)
+function plot_scatter(results::LockingResults; orientation::Symbol=:portrait, shot_label::String="")
     r = results
 
     is_RPRW = size(r.norm_sols, 2) == 5
@@ -266,7 +267,7 @@ function plot_scatter(results::LockingResults; orientation::Symbol=:portrait)
 
         if orientation == :landscape
             # 2×3: top row = raw (a,c,e), bottom row = normalised (b,d,f)
-            plt = plot(p_a, p_c, p_e, p_b, p_d, p_f; layout=(2, 3), size=(1350, 700))
+            plt = plot(p_a, p_c, p_e, p_b, p_d, p_f; layout=(2, 3), size=(1500, 700))
         else
             # 3×2 portrait: left col = raw, right col = normalised
             plt = plot(p_a, p_b, p_c, p_d, p_e, p_f; layout=(3, 2), size=(900, 1050))
@@ -277,6 +278,10 @@ function plot_scatter(results::LockingResults; orientation::Symbol=:portrait)
         else
             plt = plot(p_a, p_b; layout=(2, 1), size=(600, 750))
         end
+    end
+
+    if !isempty(shot_label)
+        plot!(plt; plot_title=shot_label, plot_titlefontsize=16)
     end
 
     return plt
@@ -295,7 +300,8 @@ Two stacked pcolor panels of normalised solutions over the (C2, C1) control spac
 Analytic bifurcation boundary (D = 0) overlaid in black when NL saturation is off.
 """
 function plot_phase_diagrams(results::LockingResults, ode_params::ODEparams, grid_size::Int, control_type::Symbol;
-                             b0::Float64=NaN, t0::Float64=NaN, m_pol::Float64=NaN, orientation::Symbol=:portrait)
+                             b0::Float64=NaN, t0::Float64=NaN, m_pol::Float64=NaN, orientation::Symbol=:portrait,
+                             shot_label::String="")
     r  = results
     gs = grid_size
     x  = unique(ode_params.Control2)   # Control2 values  (x-axis)
@@ -374,8 +380,13 @@ function plot_phase_diagrams(results::LockingResults, ode_params::ODEparams, gri
               Plots.text("(b)", 15, :white, :left))
 
     plt = orientation == :landscape ?
-        plot(p_a, p_b; layout=(1, 2), size=(1300, 600)) :
+        plot(p_a, p_b; layout=(1, 2), size=(1400, 550)) :
         plot(p_a, p_b; layout=(2, 1), size=(650, 1100))
+
+    if !isempty(shot_label)
+        plot!(plt; plot_title=shot_label, plot_titlefontsize=16)
+    end
+
     return plt
 end
 
@@ -391,7 +402,8 @@ Contourf of NN locking probability P(locked) over the (C2, C1) control space.
   • dashed yellow : analytic bifurcation boundary (D = 0), when available
 """
 function plot_probability(results::LockingResults, ode_params::ODEparams, control_type::Symbol;
-                          b0::Float64=NaN, t0::Float64=NaN, m_pol::Float64=NaN)
+                          b0::Float64=NaN, t0::Float64=NaN, m_pol::Float64=NaN,
+                          shot_label::String="")
     r = results
     r.prob === nothing && error("No trained NN model — run train_locking_nn first")
 
@@ -451,6 +463,11 @@ function plot_probability(results::LockingResults, ode_params::ODEparams, contro
               Plots.text("UNLOCKED", 18, :white, :left))
     annotate!(plt, xr[1]+0.70*(xr[2]-xr[1]), yr[1]+0.05*(yr[2]-yr[1]),
               Plots.text("LOCKED",   18, :white, :left))
+
+    if !isempty(shot_label)
+        annotate!(plt, xr[1]+0.02*(xr[2]-xr[1]), yr[2]-0.05*(yr[2]-yr[1]),
+                  Plots.text(shot_label, 14, :white, :left))
+    end
 
     return plt
 end
