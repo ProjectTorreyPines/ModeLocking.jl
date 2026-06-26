@@ -180,7 +180,6 @@ Solve the reduced-order ODE system for one (C1, C2) point on the control grid.
 - `time_steps`    : number of saved time steps when `full_output=true`
 - `C1`            : rotation-frequency control value
 - `C2`            : swept control value (EF / Δ′ / α, depending on `control_type`)
-- `EFphase`       : EF phase from actor.par
 
 When `full_output=false` (default), returns only the final state vector
 (`sol.u[end]`) — used for grid scans. When `full_output=true`, returns the
@@ -322,7 +321,7 @@ stored in `ode_params`, in parallel via `pmap`. Returns a `(N*M × n_states)`
 matrix of final states (one row per grid point, in `Control1`/`Control2` order).
 """
 function solve_grid(ode_params::ODEparams, application::String, n_tor::Int, EFphase::Float64,
-                    control_type::Symbol,t_final::Real, time_steps::Int)
+                    control_type::Symbol, t_final::Real, time_steps::Int)
     println("Solving the FULL system, this may take a few seconds")
 
     # Control1 = C1 (rotation, Y-axis), Control2 = C2 = EF/Δ′/α (X-axis)
@@ -353,7 +352,7 @@ into "locked"/"unlocked" via k-means on `(psiN, OmN)`, and (unless NL
 saturation is active) compute the analytic bifurcation boundary.
 """
 function solve_and_classify(ode_params::ODEparams, application::String, n_tor::Int, EFphase::Float64,
-                            control_type::Symbol,t_final::Real, time_steps::Int, NL_saturation::Bool, grid_size::Int)
+                            control_type::Symbol, t_final::Real, time_steps::Int, NL_saturation::Bool, grid_size::Int)
     control1 = ode_params.Control1
     control2 = ode_params.Control2
     ode_sols = solve_grid(ode_params, application, n_tor, EFphase, control_type, t_final, time_steps)
@@ -519,7 +518,7 @@ function simulate_one_case(ode_params::ODEparams, application::String, n_tor::In
         control2 = 0.5
     end
 
-    sol = solve_ODEs(ode_params, application, n_tor, EFphase, control_type, t_final, time_steps, control1, control2; full_output=true)
+    sol = solve_ODEs(ode_params, application, n_tor, control_type, t_final, time_steps, control1, control2; full_output=true)
 
     norm_t = reduce(vcat, (normalize_ode_results(u, ode_params, control2, control1, control_type)'
                             for u in sol.u))
