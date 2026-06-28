@@ -438,7 +438,7 @@ function plot_probability(results::LockingResults, ode_params::ODEparams, contro
     plt = contourf(x, y, prob_grid;
         xlabel         = xlabel_ctrl,
         ylabel         = ylabel_str,
-        title          = "Locking probability P(locked) — NN",
+        title          = "Locking probability P(locked)",
         colorbar_title = "P(locked)",
         clims          = (0.0, 1.0),
         levels         = 20,

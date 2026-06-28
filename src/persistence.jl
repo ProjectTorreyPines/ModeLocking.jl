@@ -5,8 +5,10 @@
 # Default directory for saved ODE results and NN models — lives inside the package under data/
 const LOCKING_RESULTS_DIR = joinpath(@__DIR__, "..", "data")
 
-# In-memory cache — avoids reloading from disk on every evaluate_probability call
-const _locking_nn_cache = Dict{String, LockingNNModel}()
+# In-memory caches — avoid reloading from disk on every evaluate_probability call
+const _locking_nn_cache   = Dict{String, LockingNNModel}()
+const _locking_conv_cache = Dict{String, ConvProbModel}()
+const _locking_kde_cache  = Dict{String, KDEProbModel}()
 
 
 """
@@ -113,5 +115,103 @@ function load_locking_nn(; control_type::Symbol          = :EF,
     prob_model = LockingNNModel(d[:model], d[:nn_params])
     _locking_nn_cache[path] = prob_model
     @info "Loaded locking NN model ← $path"
+    return prob_model
+end
+
+
+"""
+    save_conv_prob(prob_model::ConvProbModel; control_type=:EF, window_C1=5, window_C2=5,
+                    filename=nothing, dir=LOCKING_RESULTS_DIR) → path
+
+Save a `ConvProbModel` to disk.
+Default filename: `conv<w1>x<w2>_model_<control_type>.bson`.
+"""
+function save_conv_prob(prob_model::ConvProbModel;
+                         control_type::Symbol          = :EF,
+                         window_C1::Int                = 5,
+                         window_C2::Int                = 5,
+                         filename::Union{String,Nothing} = nothing,
+                         dir::String                     = LOCKING_RESULTS_DIR)
+    mkpath(dir)
+    fname = filename === nothing ? "conv$(window_C1)x$(window_C2)_model_$(control_type).bson" : filename
+    path  = joinpath(dir, fname)
+    prob_grid = prob_model.prob_grid
+    C1_vals   = prob_model.C1_vals
+    C2_vals   = prob_model.C2_vals
+    BSON.@save path prob_grid C1_vals C2_vals
+    @info "Saved convolution probability model → $path"
+    return path
+end
+
+
+"""
+    load_conv_prob(; control_type=:EF, window_C1=5, window_C2=5, filename=nothing,
+                    dir=LOCKING_RESULTS_DIR) → ConvProbModel
+
+Load a saved `ConvProbModel` from disk.  Cached in memory after first load.
+Default filename: `conv<w1>x<w2>_model_<control_type>.bson`.
+"""
+function load_conv_prob(; control_type::Symbol          = :EF,
+                          window_C1::Int                = 5,
+                          window_C2::Int                = 5,
+                          filename::Union{String,Nothing} = nothing,
+                          dir::String                     = LOCKING_RESULTS_DIR)
+    fname = filename === nothing ? "conv$(window_C1)x$(window_C2)_model_$(control_type).bson" : filename
+    path  = joinpath(dir, fname)
+    haskey(_locking_conv_cache, path) && return _locking_conv_cache[path]
+    isfile(path) || error("No saved convolution model at $path — run conv_locking_probability first")
+    d = BSON.load(path, @__MODULE__)
+    prob_model = ConvProbModel(d[:prob_grid], d[:C1_vals], d[:C2_vals])
+    _locking_conv_cache[path] = prob_model
+    @info "Loaded convolution probability model ← $path"
+    return prob_model
+end
+
+
+"""
+    save_kde_prob(prob_model::KDEProbModel; control_type=:EF, window_C1=5, window_C2=5,
+                   filename=nothing, dir=LOCKING_RESULTS_DIR) → path
+
+Save a `KDEProbModel` to disk.
+Default filename: `kde<w1>x<w2>_model_<control_type>.bson`.
+"""
+function save_kde_prob(prob_model::KDEProbModel;
+                        control_type::Symbol          = :EF,
+                        window_C1::Int                = 5,
+                        window_C2::Int                = 5,
+                        filename::Union{String,Nothing} = nothing,
+                        dir::String                     = LOCKING_RESULTS_DIR)
+    mkpath(dir)
+    fname = filename === nothing ? "kde$(window_C1)x$(window_C2)_model_$(control_type).bson" : filename
+    path  = joinpath(dir, fname)
+    prob_grid = prob_model.prob_grid
+    C1_vals   = prob_model.C1_vals
+    C2_vals   = prob_model.C2_vals
+    BSON.@save path prob_grid C1_vals C2_vals
+    @info "Saved KDE probability model → $path"
+    return path
+end
+
+
+"""
+    load_kde_prob(; control_type=:EF, window_C1=5, window_C2=5, filename=nothing,
+                   dir=LOCKING_RESULTS_DIR) → KDEProbModel
+
+Load a saved `KDEProbModel` from disk.  Cached in memory after first load.
+Default filename: `kde<w1>x<w2>_model_<control_type>.bson`.
+"""
+function load_kde_prob(; control_type::Symbol          = :EF,
+                         window_C1::Int                = 5,
+                         window_C2::Int                = 5,
+                         filename::Union{String,Nothing} = nothing,
+                         dir::String                     = LOCKING_RESULTS_DIR)
+    fname = filename === nothing ? "kde$(window_C1)x$(window_C2)_model_$(control_type).bson" : filename
+    path  = joinpath(dir, fname)
+    haskey(_locking_kde_cache, path) && return _locking_kde_cache[path]
+    isfile(path) || error("No saved KDE model at $path — run kde_locking_probability first")
+    d = BSON.load(path, @__MODULE__)
+    prob_model = KDEProbModel(d[:prob_grid], d[:C1_vals], d[:C2_vals])
+    _locking_kde_cache[path] = prob_model
+    @info "Loaded KDE probability model ← $path"
     return prob_model
 end

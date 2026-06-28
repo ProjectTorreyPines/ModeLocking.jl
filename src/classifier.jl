@@ -221,3 +221,187 @@ function tune_locking_nn(results::LockingResults, ode_params::ODEparams; n_trial
     train_locking_nn(results, ode_params, full_params)
     return full_params
 end
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Convolution-based locking probability (alternative to NN)
+# ─────────────────────────────────────────────────────────────────────────────
+
+"""
+    ConvProbModel
+
+2D box-filter probability model.  Callable as `model(C1, C2) → P(locked)`,
+matching the `LockingNNModel` interface so it can be stored in
+`LockingResults.prob` and used by `plot_probability` / `_finalize` unchanged.
+
+Internally holds the probability grid and the C1/C2 axis vectors for
+bilinear interpolation.
+"""
+struct ConvProbModel
+    prob_grid::Matrix{Float64}   # (length(C1_vals) × length(C2_vals))
+    C1_vals::Vector{Float64}
+    C2_vals::Vector{Float64}
+end
+
+function (m::ConvProbModel)(C1::Real, C2::Real)
+    c1 = clamp(Float64(C1), m.C1_vals[1], m.C1_vals[end])
+    c2 = clamp(Float64(C2), m.C2_vals[1], m.C2_vals[end])
+
+    i = searchsortedlast(m.C1_vals, c1)
+    j = searchsortedlast(m.C2_vals, c2)
+    i = clamp(i, 1, length(m.C1_vals) - 1)
+    j = clamp(j, 1, length(m.C2_vals) - 1)
+
+    # bilinear weights
+    di = (c1 - m.C1_vals[i]) / (m.C1_vals[i+1] - m.C1_vals[i])
+    dj = (c2 - m.C2_vals[j]) / (m.C2_vals[j+1] - m.C2_vals[j])
+
+    p00 = m.prob_grid[i,   j]
+    p10 = m.prob_grid[i+1, j]
+    p01 = m.prob_grid[i,   j+1]
+    p11 = m.prob_grid[i+1, j+1]
+
+    return (1-di)*(1-dj)*p00 + di*(1-dj)*p10 + (1-di)*dj*p01 + di*dj*p11
+end
+
+"""
+    _boxfilter2d(A, w1, w2) → Matrix{Float64}
+
+2D moving-average (box) filter with window size `w1 × w2`
+(`w1` along rows / C1 axis, `w2` along columns / C2 axis).
+Edge pixels use a smaller window (no padding).
+"""
+function _boxfilter2d(A::Matrix{Float64}, w1::Int, w2::Int)
+    nr, nc = size(A)
+    h1 = div(w1, 2)
+    h2 = div(w2, 2)
+    out = similar(A)
+    for j in 1:nc, i in 1:nr
+        i0 = max(1, i - h1);  i1 = min(nr, i + h1)
+        j0 = max(1, j - h2);  j1 = min(nc, j + h2)
+        out[i, j] = sum(@view A[i0:i1, j0:j1]) / ((i1 - i0 + 1) * (j1 - j0 + 1))
+    end
+    return out
+end
+
+"""
+    conv_locking_probability(results, ode_params, grid_size; window_C1=5, window_C2=5) → ConvProbModel
+
+Compute locking probability via 2D box-filter convolution on the binary
+locked/unlocked grid (from k-means labels).  Returns a `ConvProbModel` that
+is callable as `model(C1, C2) → P(locked) ∈ [0,1]`.
+
+Assign the result to `results.prob` to use it with `plot_probability` and
+`_finalize` exactly as with the NN model.
+
+# Arguments
+- `window_C1` : kernel width along the C1 (Ω₀) axis (must be odd).
+- `window_C2` : kernel width along the C2 (EF/Δ'/α) axis (must be odd).
+"""
+function conv_locking_probability(results::LockingResults, ode_params::ODEparams, grid_size::Int;
+                                   window_C1::Int=5, window_C2::Int=5)
+    isodd(window_C1) || throw(ArgumentError("window_C1 must be odd, got $window_C1"))
+    isodd(window_C2) || throw(ArgumentError("window_C2 must be odd, got $window_C2"))
+
+    locked = Float64.(results.locking_labels .== 2)
+    locked_grid = reshape(locked, grid_size, grid_size)   # rows=C1, cols=C2
+
+    prob_grid = _boxfilter2d(locked_grid, window_C1, window_C2)
+
+    C1_vals = unique(ode_params.Control1)
+    C2_vals = unique(ode_params.Control2)
+
+    @info "Convolution probability computed ($(window_C1)×$(window_C2) box filter)"
+    return ConvProbModel(prob_grid, C1_vals, C2_vals)
+end
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  KDE-based locking probability (Gaussian kernel alternative)
+# ─────────────────────────────────────────────────────────────────────────────
+
+"""
+    KDEProbModel
+
+Gaussian-kernel density estimate of locking probability.  Callable as
+`model(C1, C2) → P(locked)`, same interface as `ConvProbModel` / `LockingNNModel`.
+"""
+struct KDEProbModel
+    prob_grid::Matrix{Float64}
+    C1_vals::Vector{Float64}
+    C2_vals::Vector{Float64}
+end
+
+function (m::KDEProbModel)(C1::Real, C2::Real)
+    c1 = clamp(Float64(C1), m.C1_vals[1], m.C1_vals[end])
+    c2 = clamp(Float64(C2), m.C2_vals[1], m.C2_vals[end])
+
+    i = searchsortedlast(m.C1_vals, c1)
+    j = searchsortedlast(m.C2_vals, c2)
+    i = clamp(i, 1, length(m.C1_vals) - 1)
+    j = clamp(j, 1, length(m.C2_vals) - 1)
+
+    di = (c1 - m.C1_vals[i]) / (m.C1_vals[i+1] - m.C1_vals[i])
+    dj = (c2 - m.C2_vals[j]) / (m.C2_vals[j+1] - m.C2_vals[j])
+
+    p00 = m.prob_grid[i,   j]
+    p10 = m.prob_grid[i+1, j]
+    p01 = m.prob_grid[i,   j+1]
+    p11 = m.prob_grid[i+1, j+1]
+
+    return (1-di)*(1-dj)*p00 + di*(1-dj)*p10 + (1-di)*dj*p01 + di*dj*p11
+end
+
+"""
+    _gaussfilter2d(A, w1, w2) → Matrix{Float64}
+
+2D Gaussian filter with window `w1 × w2`.  The standard deviation along each
+axis is `σ = w / 4` (window spans ~2σ on each side).  The kernel is truncated
+at the window boundary and renormalized, so edge pixels are handled correctly.
+"""
+function _gaussfilter2d(A::Matrix{Float64}, w1::Int, w2::Int)
+    nr, nc = size(A)
+    h1 = div(w1, 2);  σ1 = w1 / 4.0
+    h2 = div(w2, 2);  σ2 = w2 / 4.0
+    out = similar(A)
+    for j in 1:nc, i in 1:nr
+        i0 = max(1, i - h1);  i1 = min(nr, i + h1)
+        j0 = max(1, j - h2);  j1 = min(nc, j + h2)
+        wsum = 0.0
+        vsum = 0.0
+        for jj in j0:j1, ii in i0:i1
+            g = exp(-0.5 * (((ii - i) / σ1)^2 + ((jj - j) / σ2)^2))
+            wsum += g
+            vsum += g * A[ii, jj]
+        end
+        out[i, j] = vsum / wsum
+    end
+    return out
+end
+
+"""
+    kde_locking_probability(results, ode_params, grid_size; window_C1=5, window_C2=5) → KDEProbModel
+
+Compute locking probability via Gaussian kernel density estimation on the
+binary locked/unlocked grid (from k-means labels).  Returns a `KDEProbModel`
+callable as `model(C1, C2) → P(locked) ∈ [0,1]`.
+
+Uses the same `window_C1` / `window_C2` parameters as
+`conv_locking_probability`; the Gaussian σ along each axis is `window / 4`.
+"""
+function kde_locking_probability(results::LockingResults, ode_params::ODEparams, grid_size::Int;
+                                  window_C1::Int=5, window_C2::Int=5)
+    isodd(window_C1) || throw(ArgumentError("window_C1 must be odd, got $window_C1"))
+    isodd(window_C2) || throw(ArgumentError("window_C2 must be odd, got $window_C2"))
+
+    locked = Float64.(results.locking_labels .== 2)
+    locked_grid = reshape(locked, grid_size, grid_size)
+
+    prob_grid = _gaussfilter2d(locked_grid, window_C1, window_C2)
+
+    C1_vals = unique(ode_params.Control1)
+    C2_vals = unique(ode_params.Control2)
+
+    @info "KDE probability computed ($(window_C1)×$(window_C2) Gaussian, σ₁=$(window_C1/4), σ₂=$(window_C2/4))"
+    return KDEProbModel(prob_grid, C1_vals, C2_vals)
+end

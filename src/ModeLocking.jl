@@ -29,11 +29,15 @@ export simulate_one_case
 # --- classifier.jl ---
 export prepare_nn_data, build_locking_nn, get_activation
 export train_locking_nn, tune_locking_nn, transfer_learn_locking_nn
+export ConvProbModel, conv_locking_probability
+export KDEProbModel, kde_locking_probability
 
 # --- persistence.jl ---
 export LOCKING_RESULTS_DIR
 export save_ode_results, load_ode_results
 export save_locking_nn, load_locking_nn
+export save_conv_prob, load_conv_prob
+export save_kde_prob, load_kde_prob
 
 # --- plotting.jl ---
 export plot_time_traces, plot_sols, plot_scatter, plot_phase_diagrams, plot_probability
