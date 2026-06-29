@@ -27,7 +27,7 @@ function rhs_RW!(dydt, y, t, Control2::Float64, C1::Float64, thEF::Float64, ode_
 
     dydt[1] = Deltat * psi * (1.0 + alpha * abs(psi)) + l21 * psiW * cos(theta - thW)
     dydt[2] = -n0 * Om - l21 * psiW * sin(theta - thW) / psi
-    dydt[3] = (rt * l21 * psiW * psi * sin(theta - thW) + mu * (C1 - Om)) / I
+    dydt[3] = (rt * l21 * psiW * psi * sin(theta - thW) + mu * (2π * C1 - Om)) / I
     dydt[4] = Tt_Tw * (DeltaW * psiW + l12 * psi * cos(theta - thW) + l32 * errF * sin(thEF - thW))
     dydt[5] = Tt_Tw * (l12 * psi * sin(theta - thW) - l32 * errF * cos(thEF - thW)) / psiW
 end
@@ -46,7 +46,7 @@ function rhs_basic!(dydt, y, t, Control2::Float64, C1::Float64, thEF::Float64, o
 
     dydt[1] = Deltat * psi * (1.0 + alpha * abs(psi)) + l21 * errF * sin(thEF - theta)
     dydt[2] = -n0 * Om - l21 * errF * cos(thEF - theta) / psi
-    dydt[3] = (rt * l21 * errF * psi * cos(thEF - theta) + mu * (C1 - Om)) / I
+    dydt[3] = (rt * l21 * errF * psi * cos(thEF - theta) + mu * (2π * C1 - Om)) / I
 end
 
 "Random initial condition inside the hyper-cube `dims`, for the given application"
@@ -226,7 +226,7 @@ Normalize the final solutions from ODE runs.
 Normalization:
     psiN  = final_sol[1] * (Deltat * DeltaW - l12 * l21) / (l32 * l21 * eps)
     psiwN = final_sol[4] * (Deltat * DeltaW - l12 * l21) / (l32 * abs(Deltat) * eps)
-    OmN   = final_sol[3] / C1
+    OmN   = final_sol[3] / (2π * C1)
 """
 function normalize_ode_results(results, ode_params::ODEparams, C2_vec, C1_vec, control_type)
     # Extract parameters
@@ -246,7 +246,7 @@ function normalize_ode_results(results, ode_params::ODEparams, C2_vec, C1_vec, c
         if length(final_sol) == 5 # RP-RW layout
             psit    = final_sol[1]
             theta_t = mod(final_sol[2], 2π)
-            OmN     = final_sol[3] / C1
+            OmN     = final_sol[3] / (2π * C1)
             psiw    = final_sol[4]
             theta_w = mod(final_sol[5], 2π)
             rho = abs(DeltatRW / Deltat)
@@ -273,7 +273,7 @@ function normalize_ode_results(results, ode_params::ODEparams, C2_vec, C1_vec, c
         elseif length(final_sol) == 3 # RP-IW layout
             psit    = final_sol[1]
             theta_t = mod(final_sol[2], 2π)
-            OmN     = final_sol[3] / C1
+            OmN     = final_sol[3] / (2π * C1)
 
             if iszero(alpha)  # linear regime: saturation_param set to 0. when NL_saturation=false
                 psitMax = l21 * eps / abs(Deltat)
@@ -413,19 +413,22 @@ function calculate_bifurcation_bounds(ode_params::ODEparams, application::String
     sc = resolve_control(ode_params, control_type)
     (; Y, Deltat, eps, alpha, DeltatRW) = sc
 
+    # Y is stored in frequency units; convert to angular frequency for the analysis
+    Y_ang = 2π .* Y
+
     if all(iszero, alpha)
         # ── Linear case: fast vectorised analytic discriminant ──────────────
         if application == "RP-RW"
             q = (DeltatRW ./ n0).^2 .+ rt .* (l32 .* l21 .* eps ./ DeltaW).^2 ./ (n0 * mu)
-            r = -Y .* DeltatRW.^2 ./ n0^2
+            r = -Y_ang .* DeltatRW.^2 ./ n0^2
         elseif application == "RP-IW"
             q = (Deltat ./ n0).^2 .+ (l21 .* eps).^2 ./ mu
-            r = -Y .* Deltat.^2 ./ n0^2
+            r = -Y_ang .* Deltat.^2 ./ n0^2
         else
             error("calculate_bifurcation_bounds not implemented for application: $(application)")
         end
-        a = -(Y.^2) ./ 3.0 .+ q
-        b = 2.0 .* (-Y).^3 ./ 27.0 .- q .* (-Y) ./ 3.0 .+ r
+        a = -(Y_ang.^2) ./ 3.0 .+ q
+        b = 2.0 .* (-Y_ang).^3 ./ 27.0 .- q .* (-Y_ang) ./ 3.0 .+ r
         return reshape(b.^2 ./ 4 .+ a.^3 ./ 27, grid_size, grid_size)
 
     else
@@ -437,7 +440,7 @@ function calculate_bifurcation_bounds(ode_params::ODEparams, application::String
         indicator = Vector{Float64}(undef, n)
         for i in eachindex(Y)
             indicator[i] = _nl_bifurcation_indicator(
-                application, Y[i], Deltat[i], eps[i], alpha[i], DeltatRW[i],
+                application, Y_ang[i], Deltat[i], eps[i], alpha[i], DeltatRW[i],
                 n0, mu, rt, l21, l32, DeltaW, psi_lo, psi_hi)
         end
         return reshape(indicator, grid_size, grid_size)
@@ -449,6 +452,8 @@ end
 
 Return -1.0 if the NL steady-state equation H(ψ) has ≥ 2 positive real roots
 (multiple equilibria → locking possible), +1.0 otherwise.
+
+C1 is in angular-frequency units (caller converts from stored frequency grid).
 
 Steady-state residuals (derived by setting dψ/dt = 0 in the normalised ODE):
 

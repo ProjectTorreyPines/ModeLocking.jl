@@ -21,8 +21,8 @@ Base.@kwdef mutable struct ODEparams
     Inertia::Float64          = 0.1   # moment of inertia of the layer
     Taut_Tauw::Float64        = 1.0   # ratio of tearing time to wall time
     hyper_cube_dims::Vector{Float64} = [1., 1., 1.] # initial condition hypercube dimensions
-    Control1_min::Float64     = 1.0e-2
-    Control1_max::Float64     = 10.0
+    Control1_min::Float64     = 1.0e-2  # kHz — converted to dimensionless in set_control_parameters!
+    Control1_max::Float64     = 10.0   # kHz — converted to dimensionless in set_control_parameters!
     Control2_min::Float64     = 0.01
     Control2_max::Float64     = 10.0
 

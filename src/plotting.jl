@@ -66,7 +66,7 @@ function plot_time_traces(sol::ODESolution, norm_vec::AbstractVector{<:Real})
     # ψ_ode is normalized to b0 (errF = EF_Gauss*1e-4/b0 → dimensionless).
     # δB[T] = ψ_ode * b0  →  δB[Gauss] = ψ_ode * b0 * 1e4
     mag_factor  = b0 * 1.e4
-    freq_factor = 1.e-3 / t0   # Ω (dimensionless) → 2π*kHz
+    freq_factor = 1.0 / (2π * 1e3 * t0)   # Ω (dimensionless) → kHz
 
     t_ms    = sol.t .* t0 .* 1e3   # dimensionless ODE time → ms
     psi_G   = [u[1] for u in sol.u] .* mag_factor
@@ -83,7 +83,7 @@ function plot_time_traces(sol::ODESolution, norm_vec::AbstractVector{<:Real})
 
     # Ω in kHz on its own scale on the right y-axis
     ax2 = twinx(plt)
-    plot!(ax2, t_ms, Om_kHz; ylabel="Ω (kHz)", label="Ω", lw=4,
+    plot!(ax2, t_ms, Om_kHz; ylabel="f (kHz)", label="f", lw=4,
           color=:firebrick, linestyle=:dash, legend=:bottomright, legendfontsize=12)
     ylims!(ax2, 0, maximum(Om_kHz) * 1.05)
 
@@ -326,8 +326,8 @@ function plot_phase_diagrams(results::LockingResults, ode_params::ODEparams, gri
         xlabel_ctrl = _ctrl_xlabel(control_type)
     end
     if !isnan(t0)
-        y          = y ./ (t0 * 1e3)
-        ylabel_str = "Ω₀ (2π*kHz)"
+        y          = y ./ (1e3 * t0)
+        ylabel_str = "f₀ (kHz)"
     else
         ylabel_str = "Ω₀"
     end
@@ -403,7 +403,7 @@ Contourf of NN locking probability P(locked) over the (C2, C1) control space.
 """
 function plot_probability(results::LockingResults, ode_params::ODEparams, control_type::Symbol;
                           b0::Float64=NaN, t0::Float64=NaN, m_pol::Float64=NaN,
-                          shot_label::String="")
+                          shot_label::String="", op_C1::Float64=NaN, op_C2::Float64=NaN)
     r = results
     r.prob === nothing && error("No trained NN model — run train_locking_nn first")
 
@@ -422,9 +422,9 @@ function plot_probability(results::LockingResults, ode_params::ODEparams, contro
     else
         xlabel_ctrl = _ctrl_xlabel(control_type)
     end
-    ylabel_str = !isnan(t0) ? "Ω₀ (2π*kHz)" : "Ω₀"
+    ylabel_str = !isnan(t0) ? "f₀ (kHz)" : "Ω₀"
     if !isnan(t0)
-        y = y ./ (t0 * 1e3)
+        y = y ./ (1e3 * t0)
     end
 
     prob_grid = [r.prob(c1, c2) for c1 in y, c2 in x_ctrl]
@@ -467,6 +467,23 @@ function plot_probability(results::LockingResults, ode_params::ODEparams, contro
     if !isempty(shot_label)
         annotate!(plt, xr[1]+0.02*(xr[2]-xr[1]), yr[2]-0.05*(yr[2]-yr[1]),
                   Plots.text(shot_label, 14, :white, :left))
+    end
+
+    # Operating-point marker: convert from dimensionless to display units
+    if !isnan(op_C1) && !isnan(op_C2)
+        op_x = op_C2
+        op_y = op_C1
+        if control_type == :EF && !isnan(b0) && !isnan(m_pol)
+            op_x = op_x * (m_pol / ode_params.control_surf) * b0 * 1e4
+        elseif control_type == :NLsaturation
+            op_x = 1.0 / op_x
+        end
+        if !isnan(t0)
+            op_y = op_y / (1e3 * t0)
+        end
+        scatter!(plt, [op_x], [op_y]; marker=:star5, markersize=14,
+                 markercolor=:yellow, markerstrokecolor=:black, markerstrokewidth=1.5,
+                 label="Operating point")
     end
 
     return plt
