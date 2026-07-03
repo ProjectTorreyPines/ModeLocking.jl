@@ -11,42 +11,40 @@ end
 
 "Right-hand side for the rational-surface + resistive-wall (RP-RW) system"
 function rhs_RW!(dydt, y, t, Control2::Float64, C1::Float64, thEF::Float64, ode_params::ODEparams, n_tor::Int, control_type::Symbol)
-    n0 = n_tor
     DeltaW = ode_params.DeltaW
-    rt = ode_params.rat_surface
     l21 = ode_params.l21
     l12 = ode_params.l12
     l32 = ode_params.l32
     Tt_Tw = ode_params.Taut_Tauw
     mu = ode_params.mu
     I = ode_params.Inertia
+    tor_fac = ode_params.tor_fac
 
     alpha, errF, Deltat = control_adjustments(ode_params, Control2, control_type)
 
     psi, theta, Om, psiW, thW = y
 
     dydt[1] = Deltat * psi * (1.0 + alpha * abs(psi)) + l21 * psiW * cos(theta - thW)
-    dydt[2] = -n0 * Om - l21 * psiW * sin(theta - thW) / psi
-    dydt[3] = (rt * l21 * psiW * psi * sin(theta - thW) + mu * (2π * C1 - Om)) / I
+    dydt[2] = -n_tor * Om - l21 * psiW * sin(theta - thW) / psi
+    dydt[3] = (tor_fac * n_tor * l21 * psiW * psi * sin(theta - thW) + mu * (2π * C1 - Om)) / I
     dydt[4] = Tt_Tw * (DeltaW * psiW + l12 * psi * cos(theta - thW) + l32 * errF * sin(thEF - thW))
     dydt[5] = Tt_Tw * (l12 * psi * sin(theta - thW) - l32 * errF * cos(thEF - thW)) / psiW
 end
 
 "Right-hand side for the rational-surface + ideal-wall (RP-IW) system"
 function rhs_basic!(dydt, y, t, Control2::Float64, C1::Float64, thEF::Float64, ode_params::ODEparams, n_tor::Int, control_type::Symbol)
-    n0 = n_tor
-    rt = ode_params.rat_surface
     l21 = ode_params.l21
     mu = ode_params.mu
     I = ode_params.Inertia
+    tor_fac = ode_params.tor_fac
 
     alpha, errF, Deltat = control_adjustments(ode_params, Control2, control_type)
 
     psi, theta, Om = y
 
     dydt[1] = Deltat * psi * (1.0 + alpha * abs(psi)) + l21 * errF * sin(thEF - theta)
-    dydt[2] = -n0 * Om - l21 * errF * cos(thEF - theta) / psi
-    dydt[3] = (rt * l21 * errF * psi * cos(thEF - theta) + mu * (2π * C1 - Om)) / I
+    dydt[2] = -n_tor * Om - l21 * errF * cos(thEF - theta) / psi
+    dydt[3] = (tor_fac * n_tor * l21 * errF * psi * cos(thEF - theta) + mu * (2π * C1 - Om)) / I
 end
 
 "Random initial condition inside the hyper-cube `dims`, for the given application"
@@ -402,12 +400,11 @@ Two wall configurations are supported via `application`:
 """
 function calculate_bifurcation_bounds(ode_params::ODEparams, application::String, control_type::Symbol,
                                        n_tor::Int, grid_size::Int)
-    n0     = n_tor
-    mu     = ode_params.mu
-    rt     = ode_params.rat_surface
-    l21    = ode_params.l21
-    l32    = ode_params.l32
-    DeltaW = ode_params.DeltaW
+    mu      = ode_params.mu
+    tor_fac = ode_params.tor_fac
+    l21     = ode_params.l21
+    l32     = ode_params.l32
+    DeltaW  = ode_params.DeltaW
 
     # resolve_control handles all control-type branching; wall branching is separate
     sc = resolve_control(ode_params, control_type)
@@ -419,11 +416,11 @@ function calculate_bifurcation_bounds(ode_params::ODEparams, application::String
     if all(iszero, alpha)
         # ── Linear case: fast vectorised analytic discriminant ──────────────
         if application == "RP-RW"
-            q = (DeltatRW ./ n0).^2 .+ rt .* (l32 .* l21 .* eps ./ DeltaW).^2 ./ (n0 * mu)
-            r = -Y_ang .* DeltatRW.^2 ./ n0^2
+            q = (DeltatRW ./ n_tor).^2 .+ tor_fac .* (l32 .* l21 .* eps ./ DeltaW).^2 ./ (n_tor * mu)
+            r = -Y_ang .* DeltatRW.^2 ./ n_tor^2
         elseif application == "RP-IW"
-            q = (Deltat ./ n0).^2 .+ (l21 .* eps).^2 ./ mu
-            r = -Y_ang .* Deltat.^2 ./ n0^2
+            q = (Deltat ./ n_tor).^2 .+ tor_fac .* (l21 .* eps).^2 ./ (n_tor * mu)
+            r = -Y_ang .* Deltat.^2 ./ n_tor^2
         else
             error("calculate_bifurcation_bounds not implemented for application: $(application)")
         end
@@ -441,14 +438,14 @@ function calculate_bifurcation_bounds(ode_params::ODEparams, application::String
         for i in eachindex(Y)
             indicator[i] = _nl_bifurcation_indicator(
                 application, Y_ang[i], Deltat[i], eps[i], alpha[i], DeltatRW[i],
-                n0, mu, rt, l21, l32, DeltaW, psi_lo, psi_hi)
+                n_tor, mu, tor_fac, l21, l32, DeltaW, psi_lo, psi_hi)
         end
         return reshape(indicator, grid_size, grid_size)
     end
 end
 
 """
-    _nl_bifurcation_indicator(application, C1, Δ, ε, α, ΔRW, n0, μ, rt, l21, l32, DW, ψ_lo, ψ_hi)
+    _nl_bifurcation_indicator(application, C1, Δ, ε, α, ΔRW, n0, μ, tor_fac, l21, l32, DW, ψ_lo, ψ_hi)
 
 Return -1.0 if the NL steady-state equation H(ψ) has ≥ 2 positive real roots
 (multiple equilibria → locking possible), +1.0 otherwise.
@@ -457,18 +454,18 @@ C1 is in angular-frequency units (caller converts from stored frequency grid).
 
 Steady-state residuals (derived by setting dψ/dt = 0 in the normalised ODE):
 
-  RP-IW:  H(ψ) = ψ²·[Δ²·(1+αψ)²·(μ+n₀·rₜ·ψ²)² + (n₀·μ·C₁)²] - (l₂₁·ε)²·(μ+n₀·rₜ·ψ²)²
+  RP-IW:  H(ψ) = ψ²·[Δ²·(1+αψ)²·(μ+n₀·tor_fac·ψ²)² + (n₀·μ·C₁)²] - (l₂₁·ε)²·(μ+n₀·tor_fac·ψ²)²
 
-  RP-RW:  G(ψ) = ψ²·(μ+n₀·rₜ·ψ²)²·(ΔRW+Δ·α·ψ)² - (l₃₂·l₂₁·ε/DW)²·(μ+n₀·rₜ·ψ²)² + (n₀·μ·C₁)²·ψ²
+  RP-RW:  G(ψ) = ψ²·(μ+n₀·tor_fac·ψ²)²·(ΔRW+Δ·α·ψ)² - (l₃₂·l₂₁·ε/DW)²·(μ+n₀·tor_fac·ψ²)² + (n₀·μ·C₁)²·ψ²
 """
 function _nl_bifurcation_indicator(application::String,
                                     C1::Float64, Δ::Float64, ε::Float64,
                                     α::Float64, ΔRW::Float64,
-                                    n0::Int, μ::Float64, rt::Float64,
+                                    n0::Int, μ::Float64, tor_fac::Float64,
                                     l21::Float64, l32::Float64, DW::Float64,
                                     ψ_lo::Float64, ψ_hi::Float64)
-    Q = n0 * μ * C1    # torque coupling term
-    r = n0 * rt        # combined factor in (μ + r·ψ²)
+    Q = n0 * μ * C1         # viscous drag term
+    r = n0 * tor_fac        # Maxwell torque coupling in (μ + r·ψ²)
 
     H = if application == "RP-IW"
         P = l21 * ε

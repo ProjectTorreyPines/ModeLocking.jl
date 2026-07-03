@@ -26,6 +26,9 @@ Base.@kwdef mutable struct ODEparams
     Control2_min::Float64     = 0.01
     Control2_max::Float64     = 10.0
 
+    # --- computed at run time by set_phys_params! ---
+    tor_fac::Float64    = 1.0  # ⟨|∇ρ_tor|²/R²⟩*flux surface area at r_t at rational surface [m⁻²]
+
     # --- computed at run time by calculate_stability_index! ---
     DeltaW::Float64          = NaN  # intrinsic RW stability — calculated at run time
     stability_index::Float64 = NaN  # tearing mode Delta' — calculated at run time

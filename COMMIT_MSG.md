@@ -1,38 +1,37 @@
-# ModeLocking — commit message
+# ModeLocking commit message
 
-Add convolution and KDE probability models; save/load infrastructure
+EF phase in RHS, frequency-unit C1 convention, plot and normalization fixes
 
-## Convolution probability (classifier.jl)
+## EF phase propagation (dynamics.jl)
 
-- `ConvProbModel` struct — callable as `model(C1, C2)` via bilinear
-  interpolation, same interface as `LockingNNModel`.
-- `conv_locking_probability(results, ode_params, grid_size; window_C1, window_C2)`
-  — 2D box filter on binary locked/unlocked grid from k-means labels.
-- `_boxfilter2d(A, w1, w2)` — asymmetric moving-average filter, edge-aware.
+- rhs_RW!: added thEF parameter; EF→wall coupling uses -i rotation:
+  sin(thEF-thW) and -cos(thEF-thW) in dydt[4-5].
+- rhs_basic!: added thEF parameter; EF→island coupling rotated:
+  sin(thEF-θ), cos(thEF-θ) in dydt[1-3].
+- make_ode_func: p tuple now (C2, C1, EFphase, ode_params, n_tor, control_type).
+- solve_ODEs: EFphase added to signature and p tuple.
+- solve_grid, solve_and_classify, simulate_one_case: EFphase threaded through.
 
-## KDE probability (classifier.jl)
+## Frequency-unit C1 convention (dynamics.jl, types.jl)
 
-- `KDEProbModel` struct — same callable interface as `ConvProbModel`.
-- `kde_locking_probability(results, ode_params, grid_size; window_C1, window_C2)`
-  — Gaussian kernel (σ = window/4) on the same binary grid.
-- `_gaussfilter2d(A, w1, w2)` — truncated Gaussian filter, renormalized at edges.
+- Control1_min/max in ODEparams now interpreted as kHz.
+- RHS torque: mu*(2π*C1 - Om) — the 2π converts stored frequency C1
+  to angular frequency, matching the ODE state variable Om.
+- normalize_ode_results: OmN = Om / (2π*C1).
+- calculate_bifurcation_bounds: Y_ang = 2π*Y used throughout discriminant
+  and passed to _nl_bifurcation_indicator.
 
-## Persistence (persistence.jl)
+## Plotting fixes (plotting.jl)
 
-- `save_conv_prob` / `load_conv_prob` — BSON serialization for `ConvProbModel`.
-  Filename encodes window size: `conv5x5_model_EF.bson`.
-- `save_kde_prob` / `load_kde_prob` — same pattern for `KDEProbModel`.
-  Filename: `kde5x5_model_EF.bson`.
-- In-memory caches for both (`_locking_conv_cache`, `_locking_kde_cache`).
+- Phase diagrams and probability y-axis: now shows f₀(kHz) via y/(1e3*t0).
+- Time-trace physical units: freq_factor = 1/(2π*1e3*t0) for ODE state → kHz.
+- Operating-point marker (yellow star) with correct unit conversion.
+- shot_label kwarg on plot_scatter, plot_phase_diagrams, plot_probability.
+- Probability title: generic "Locking probability P(locked)" (no method name).
+- Landscape panel sizes adjusted for squarer aspect ratio.
 
-## Exports (ModeLocking.jl)
+## types.jl
 
-- `ConvProbModel`, `conv_locking_probability`
-- `KDEProbModel`, `kde_locking_probability`
-- `save_conv_prob`, `load_conv_prob`
-- `save_kde_prob`, `load_kde_prob`
-
-## Plotting (plotting.jl)
-
-- `plot_probability` title changed from "... — NN" to generic
-  "Locking probability P(locked)" (works for all three methods).
+- error_field default: 0.5 → 10.0 (Gauss).
+- n_epochs default: 1000 → 200.
+- Control1_min/max comments updated to reflect kHz units.

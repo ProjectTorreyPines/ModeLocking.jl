@@ -1,0 +1,121 @@
+Torque Reformulation: mu*(Omega_0 - Omega_t) → T_NBI*(1 - Omega_t/Omega_0)
+=============================================================================
+
+Status: REVERTED (2026-06-28). Results were incorrect; needs further investigation.
+This file documents the intended change for future implementation.
+
+
+1. MOTIVATION
+-------------
+The old viscous torque mu*(C1 - Om) has an implicit dependence on C1: the
+restoring torque grows linearly with the equilibrium rotation. This means at
+high C1 (fast rotation), the plasma is artificially harder to lock.
+
+The new form T_NBI*(1 - Om/(2*pi*C1)) uses the actual NBI torque as a fixed
+physical constant. The factor (1 - Om/Omega_0) naturally goes to zero at
+equilibrium and the torque magnitude is set by the NBI source, not by an
+abstract viscosity coefficient. This is more physical: the NBI beam deposits
+a fixed torque regardless of what rotation the control-space sweep assumes.
+
+
+2. MATHEMATICAL EQUIVALENCE (at operating point only)
+-----------------------------------------------------
+At the operating point where C1 = Omega_0 (the actual equilibrium rotation):
+
+    mu * (C1 - Om) = mu * C1 * (1 - Om/C1)
+
+So T_NBI = mu * C1_operating. But T_NBI is FIXED for all C1 in the grid,
+while mu*C1 varies. The two forms are identical only at C1 = C1_operating;
+they differ elsewhere in the grid.
+
+Key difference:
+  Old: effective restoring torque = mu * C1 (grows with C1)
+  New: effective restoring torque = T_NBI   (constant)
+  Effective viscosity: mu_eff = T_NBI / (2*pi*C1)  (varies with C1)
+
+
+3. NORMALIZATION OF T_NBI
+-------------------------
+The correct normalization (from the user) is:
+
+    ode_params.nbi_torque = torque_at_rat_surf / (b0^2 / mu_0)
+
+where:
+  - torque_at_rat_surf is the NBI torque in N*m at the rational surface
+  - b0 is the magnetic perturbation scale (Tesla)
+  - mu_0 is the vacuum permeability
+  - b0^2/mu_0 has dimensions of energy density * volume ~ energy ~ torque
+
+An earlier (incorrect) attempt used:
+    nbi_torque = mu_dim * Omega0_dim
+This is dimensionally consistent but just recovers the old form at the
+operating point — it doesn't use the physical torque directly.
+
+
+4. FILES TO MODIFY
+------------------
+All changes are in ModeLocking (package) and locking_actor.jl (FUSE).
+
+a) ModeLocking/src/types.jl
+   - Add: nbi_torque::Float64 = 1.0  to ODEparams
+
+b) ModeLocking/src/dynamics.jl — RHS functions
+   - rhs_RW!:   mu*(2*pi*C1 - Om)  →  T_NBI*(1 - Om/(2*pi*C1))
+   - rhs_basic!: same change
+   - Replace local variable: mu = ode_params.mu  →  T_NBI = ode_params.nbi_torque
+
+c) ModeLocking/src/dynamics.jl — normalize_ode_results
+   - OmN = final_sol[3] / (2*pi*C1)  — NO CHANGE (already correct)
+
+d) ModeLocking/src/dynamics.jl — calculate_bifurcation_bounds
+   LINEAR CASE:
+   - mu (scalar) → mu_eff = T_NBI ./ (2*pi .* Y)  (vector, depends on C1)
+   - RP-IW:  q = (Δ/n0)^2 + (l21*ε)^2 ./ mu_eff
+   - RP-RW:  q = (ΔRW/n0)^2 + rt*(l32*l21*ε/DW)^2 ./ (n0 .* mu_eff)
+   - r, a, b: use Y_ang = 2*pi*Y as before (unchanged)
+
+   NL CASE:
+   - Pass T_NBI and mu_eff[i] to _nl_bifurcation_indicator (instead of scalar mu)
+   - Q = n0 * T_NBI  (was n0*mu*C1 — now constant, not C1-dependent)
+   - mu → mu_eff in (mu + n0*rt*psi^2) terms
+
+e) ModeLocking/src/dynamics.jl — _nl_bifurcation_indicator
+   - Signature: add T_NBI::Float64, mu_eff::Float64 (replacing single mu)
+   - Q = n0 * T_NBI
+   - All (mu + r*psi^2) → (mu_eff + r*psi^2)
+
+f) FUSE locking_actor.jl — set_phys_params!
+   - Add after mu computation:
+     ode_params.nbi_torque = torque_at_rat_surf / (par.b0^2 / mu0_val)
+
+g) FUSE locking_actor.jl — overwrite block
+   - nbi_torque does NOT need overwriting (it's the physical torque from dd,
+     independent of whether mu/Inertia are overwritten)
+
+h) FUSE locking_actor.jl — diagnostics
+   - Add T_NBI to the @info printout
+
+
+5. WHY IT WAS REVERTED
+-----------------------
+The bifurcation boundary and locking probability maps came out wrong after
+the switch. Suspected causes (not yet debugged):
+  - The bifurcation discriminant derivation may have errors in the mu_eff
+    substitution (the algebra is involved for the NL case)
+  - The mu_eff = T_NBI/(2*pi*C1) creates a singularity as C1 → 0
+    (Control1_min = 0.01 kHz → mu_eff → very large)
+  - The normalization of T_NBI may need checking against the ODE energy scale
+
+Next step: reproduce the old results with the old form first, then switch
+one piece at a time (RHS only, then bifurcation, then NL) to isolate where
+the discrepancy enters.
+
+
+6. CONVENTION REMINDER
+----------------------
+With the 2*pi*C1 convention (C1 in frequency units, not angular):
+  - Control1_min/max are in kHz
+  - Grid: C1_dim = f_kHz * 1e3 * t0  (no 2*pi in conversion)
+  - RHS: 2*pi*C1 appears explicitly wherever angular frequency is needed
+  - Plots: y-axis shows kHz directly (divide C1_dim by 1e3*t0)
+  - ODE state Om is still angular frequency (omega*t0)
