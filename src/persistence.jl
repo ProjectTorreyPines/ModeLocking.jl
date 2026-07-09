@@ -90,6 +90,7 @@ function save_locking_nn(prob_model::LockingNNModel;
     model     = prob_model.model
     nn_params = prob_model.nn_params
     BSON.@save path model nn_params
+    _locking_nn_cache[path] = prob_model   # keep cache coherent with disk
     @info "Saved locking NN model → $path"
     return path
 end
@@ -139,6 +140,7 @@ function save_conv_prob(prob_model::ConvProbModel;
     C1_vals   = prob_model.C1_vals
     C2_vals   = prob_model.C2_vals
     BSON.@save path prob_grid C1_vals C2_vals
+    _locking_conv_cache[path] = prob_model   # keep cache coherent with disk
     @info "Saved convolution probability model → $path"
     return path
 end
@@ -188,6 +190,7 @@ function save_kde_prob(prob_model::KDEProbModel;
     C1_vals   = prob_model.C1_vals
     C2_vals   = prob_model.C2_vals
     BSON.@save path prob_grid C1_vals C2_vals
+    _locking_kde_cache[path] = prob_model   # keep cache coherent with disk
     @info "Saved KDE probability model → $path"
     return path
 end

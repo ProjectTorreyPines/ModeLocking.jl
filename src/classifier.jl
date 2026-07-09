@@ -88,9 +88,9 @@ function _fit_nn_model(model, X::Matrix{Float32}, y::Matrix{Float32}, nn_params:
                     break
                 end
             end
-            epoch % 200 == 0 && @info "  NN epoch $epoch/$(nn_params.n_epochs)  val=$(round(val; digits=4))"
+            epoch % 20 == 0 && @info "  NN epoch $epoch/$(nn_params.n_epochs)  val=$(round(val; digits=4))"
         else
-            epoch % 200 == 0 && @info "  NN epoch $epoch/$(nn_params.n_epochs)  loss=$(round(Flux.binarycrossentropy(model(X), y); digits=4))"
+            epoch % 20 == 0 && @info "  NN epoch $epoch/$(nn_params.n_epochs)  loss=$(round(Flux.binarycrossentropy(model(X), y); digits=4))"
         end
     end
     return best_model

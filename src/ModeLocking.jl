@@ -5,6 +5,7 @@ using Flux
 using Random
 import BSON
 using Plots
+using LaTeXStrings
 using Clustering
 using Distributed
 import Roots
