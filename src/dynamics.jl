@@ -505,22 +505,25 @@ value (`stability_index`, `error_field`, or `saturation_param`, depending on
 plotting) and the normalized time traces `norm_t` (n_times × n_states).
 """
 function simulate_one_case(ode_params::ODEparams, application::String, n_tor::Int, EFphase::Float64, control_type::Symbol,
-                            source_torque::Real, t_final::Real, time_steps::Int)
-    control1 = Float64(source_torque)
+                            source_torque::Real, t_final::Real, time_steps::Int;
+                            C1::Union{Float64,Nothing}=nothing, C2::Union{Float64,Nothing}=nothing)
+    # Use explicit C1/C2 when provided; otherwise fall back to defaults
+    control1 = C1 !== nothing ? C1 : Float64(source_torque)
 
-    # harvest what's already under the hood to set these inputs
-    if control_type == :EF
-        control2 = ode_params.error_field
+    control2 = if C2 !== nothing
+        C2
+    elseif control_type == :EF
+        ode_params.error_field
     elseif control_type == :LinStab
-        control2 = ode_params.stability_index - 0.5 # small adjustment to move away from marginality
+        ode_params.stability_index - 0.5
     elseif control_type == :NLsaturation
-        control2 = ode_params.saturation_param
+        ode_params.saturation_param
     else
         @info "Control scenario NOT set, guessing the value of control2"
-        control2 = 0.5
+        0.5
     end
 
-    sol = solve_ODEs(ode_params, application, n_tor, control_type, t_final, time_steps, control1, control2; full_output=true)
+    sol = solve_ODEs(ode_params, application, n_tor, EFphase, control_type, t_final, time_steps, control1, control2; full_output=true)
 
     norm_t = reduce(vcat, (normalize_ode_results(u, ode_params, control2, control1, control_type)'
                             for u in sol.u))
