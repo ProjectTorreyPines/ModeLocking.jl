@@ -82,10 +82,12 @@ When `filename` is omitted the file is named `nn_model_<control_type>.bson`.
 """
 function save_locking_nn(prob_model::LockingNNModel;
                           control_type::Symbol          = :EF,
+                          nl_sat::Bool                  = false,
                           filename::Union{String,Nothing} = nothing,
                           dir::String                     = LOCKING_RESULTS_DIR)
     mkpath(dir)
-    fname     = filename === nothing ? "nn_model_$(control_type).bson" : filename
+    nl_suffix = nl_sat ? "_NLsat" : ""
+    fname     = filename === nothing ? "nn_model_$(control_type)$(nl_suffix).bson" : filename
     path      = joinpath(dir, fname)
     model     = prob_model.model
     nn_params = prob_model.nn_params
@@ -106,9 +108,11 @@ When `filename` is omitted the file is looked up as
 `nn_model_<control_type>.bson`.
 """
 function load_locking_nn(; control_type::Symbol          = :EF,
+                           nl_sat::Bool                  = false,
                            filename::Union{String,Nothing} = nothing,
                            dir::String                     = LOCKING_RESULTS_DIR)
-    fname = filename === nothing ? "nn_model_$(control_type).bson" : filename
+    nl_suffix = nl_sat ? "_NLsat" : ""
+    fname = filename === nothing ? "nn_model_$(control_type)$(nl_suffix).bson" : filename
     path  = joinpath(dir, fname)
     haskey(_locking_nn_cache, path) && return _locking_nn_cache[path]
     isfile(path) || error("No saved model at $path — run save_locking_nn first")
@@ -129,12 +133,14 @@ Default filename: `conv<w1>x<w2>_model_<control_type>.bson`.
 """
 function save_conv_prob(prob_model::ConvProbModel;
                          control_type::Symbol          = :EF,
+                         nl_sat::Bool                  = false,
                          window_C1::Int                = 5,
                          window_C2::Int                = 5,
                          filename::Union{String,Nothing} = nothing,
                          dir::String                     = LOCKING_RESULTS_DIR)
     mkpath(dir)
-    fname = filename === nothing ? "conv$(window_C1)x$(window_C2)_model_$(control_type).bson" : filename
+    nl_suffix = nl_sat ? "_NLsat" : ""
+    fname = filename === nothing ? "conv$(window_C1)x$(window_C2)_model_$(control_type)$(nl_suffix).bson" : filename
     path  = joinpath(dir, fname)
     prob_grid = prob_model.prob_grid
     C1_vals   = prob_model.C1_vals
@@ -154,11 +160,13 @@ Load a saved `ConvProbModel` from disk.  Cached in memory after first load.
 Default filename: `conv<w1>x<w2>_model_<control_type>.bson`.
 """
 function load_conv_prob(; control_type::Symbol          = :EF,
+                          nl_sat::Bool                  = false,
                           window_C1::Int                = 5,
                           window_C2::Int                = 5,
                           filename::Union{String,Nothing} = nothing,
                           dir::String                     = LOCKING_RESULTS_DIR)
-    fname = filename === nothing ? "conv$(window_C1)x$(window_C2)_model_$(control_type).bson" : filename
+    nl_suffix = nl_sat ? "_NLsat" : ""
+    fname = filename === nothing ? "conv$(window_C1)x$(window_C2)_model_$(control_type)$(nl_suffix).bson" : filename
     path  = joinpath(dir, fname)
     haskey(_locking_conv_cache, path) && return _locking_conv_cache[path]
     isfile(path) || error("No saved convolution model at $path — run conv_locking_probability first")
@@ -179,12 +187,14 @@ Default filename: `kde<w1>x<w2>_model_<control_type>.bson`.
 """
 function save_kde_prob(prob_model::KDEProbModel;
                         control_type::Symbol          = :EF,
+                        nl_sat::Bool                  = false,
                         window_C1::Int                = 5,
                         window_C2::Int                = 5,
                         filename::Union{String,Nothing} = nothing,
                         dir::String                     = LOCKING_RESULTS_DIR)
     mkpath(dir)
-    fname = filename === nothing ? "kde$(window_C1)x$(window_C2)_model_$(control_type).bson" : filename
+    nl_suffix = nl_sat ? "_NLsat" : ""
+    fname = filename === nothing ? "kde$(window_C1)x$(window_C2)_model_$(control_type)$(nl_suffix).bson" : filename
     path  = joinpath(dir, fname)
     prob_grid = prob_model.prob_grid
     C1_vals   = prob_model.C1_vals
@@ -204,11 +214,13 @@ Load a saved `KDEProbModel` from disk.  Cached in memory after first load.
 Default filename: `kde<w1>x<w2>_model_<control_type>.bson`.
 """
 function load_kde_prob(; control_type::Symbol          = :EF,
+                         nl_sat::Bool                  = false,
                          window_C1::Int                = 5,
                          window_C2::Int                = 5,
                          filename::Union{String,Nothing} = nothing,
                          dir::String                     = LOCKING_RESULTS_DIR)
-    fname = filename === nothing ? "kde$(window_C1)x$(window_C2)_model_$(control_type).bson" : filename
+    nl_suffix = nl_sat ? "_NLsat" : ""
+    fname = filename === nothing ? "kde$(window_C1)x$(window_C2)_model_$(control_type)$(nl_suffix).bson" : filename
     path  = joinpath(dir, fname)
     haskey(_locking_kde_cache, path) && return _locking_kde_cache[path]
     isfile(path) || error("No saved KDE model at $path — run kde_locking_probability first")
