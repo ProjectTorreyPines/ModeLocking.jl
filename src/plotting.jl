@@ -403,12 +403,13 @@ Contourf of NN locking probability P(locked) over the (C2, C1) control space.
 function plot_probability(results::LockingResults, ode_params::ODEparams, control_type::Symbol;
                           b0::Float64=NaN, t0::Float64=NaN, m_pol::Float64=NaN,
                           shot_label::AbstractString="", op_label::Vector{<:AbstractString}=String[],
-                          op_C1::Vector{Float64}=Float64[], op_C2::Vector{Float64}=Float64[])
+                          op_C1::Vector{Float64}=Float64[], op_C2::Vector{Float64}=Float64[],
+                          verbose::Bool=true)
     r = results
     if r.prob === nothing
         try
-            r.prob = load_locking_nn(; control_type)
-            @info "Auto-loaded NN model for control_type=$(control_type)"
+            r.prob = load_locking_nn(; control_type, verbose)
+            verbose && @info "Auto-loaded NN model for control_type=$(control_type)"
         catch
             error("No trained model in results and none found on disk — run train_locking_nn first")
         end

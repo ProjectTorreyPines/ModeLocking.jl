@@ -312,15 +312,15 @@ end
 # ─────────────────────────────────────────────────────────────────────────────
 
 """
-    solve_grid(ode_params, application, n_tor, control_type, t_final, time_steps) → Matrix{Float64}
+    solve_grid(ode_params, application, n_tor, control_type, t_final, time_steps; verbose=true) → Matrix{Float64}
 
 Solve the reduced-order ODE system over the full `(Control1, Control2)` grid
 stored in `ode_params`, in parallel via `pmap`. Returns a `(N*M × n_states)`
 matrix of final states (one row per grid point, in `Control1`/`Control2` order).
 """
 function solve_grid(ode_params::ODEparams, application::String, n_tor::Int, EFphase::Float64,
-                    control_type::Symbol, t_final::Real, time_steps::Int)
-    println("Solving the FULL system, this may take a few seconds")
+                    control_type::Symbol, t_final::Real, time_steps::Int; verbose::Bool=true)
+    verbose && println("Solving the FULL system, this may take a few seconds")
 
     # Control1 = C1 (rotation, Y-axis), Control2 = C2 = EF/Δ′/α (X-axis)
     control1 = ode_params.Control1
@@ -343,17 +343,18 @@ end
 
 """
     solve_and_classify(ode_params, application, n_tor, control_type, t_final, time_steps,
-                        NL_saturation, grid_size) → LockingResults
+                        NL_saturation, grid_size; verbose=true) → LockingResults
 
 Solve the full control grid (`solve_grid`), normalize the results, classify
 into "locked"/"unlocked" via k-means on `(psiN, OmN)`, and (unless NL
 saturation is active) compute the analytic bifurcation boundary.
 """
 function solve_and_classify(ode_params::ODEparams, application::String, n_tor::Int, EFphase::Float64,
-                            control_type::Symbol, t_final::Real, time_steps::Int, NL_saturation::Bool, grid_size::Int)
+                            control_type::Symbol, t_final::Real, time_steps::Int, NL_saturation::Bool, grid_size::Int;
+                            verbose::Bool=true)
     control1 = ode_params.Control1
     control2 = ode_params.Control2
-    ode_sols = solve_grid(ode_params, application, n_tor, EFphase, control_type, t_final, time_steps)
+    ode_sols = solve_grid(ode_params, application, n_tor, EFphase, control_type, t_final, time_steps; verbose)
     norm_sols = normalize_ode_results(ode_sols, ode_params, control2, control1, control_type)
 
     ## classify normalized solutions
@@ -497,7 +498,7 @@ end
 
 """
     simulate_one_case(ode_params, application, n_tor, control_type, source_torque,
-                       t_final, time_steps) → (sol, norm_t)
+                       t_final, time_steps; verbose=true) → (sol, norm_t)
 
 Solve a single time-dependent case using `ode_params`'s "harvested" Control2
 value (`stability_index`, `error_field`, or `saturation_param`, depending on
@@ -506,7 +507,8 @@ plotting) and the normalized time traces `norm_t` (n_times × n_states).
 """
 function simulate_one_case(ode_params::ODEparams, application::String, n_tor::Int, EFphase::Float64, control_type::Symbol,
                             source_torque::Real, t_final::Real, time_steps::Int;
-                            C1::Union{Float64,Nothing}=nothing, C2::Union{Float64,Nothing}=nothing)
+                            C1::Union{Float64,Nothing}=nothing, C2::Union{Float64,Nothing}=nothing,
+                            verbose::Bool=true)
     # Use explicit C1/C2 when provided; otherwise fall back to defaults
     control1 = C1 !== nothing ? C1 : Float64(source_torque)
 
@@ -519,7 +521,7 @@ function simulate_one_case(ode_params::ODEparams, application::String, n_tor::In
     elseif control_type == :NLsaturation
         ode_params.saturation_param
     else
-        @info "Control scenario NOT set, guessing the value of control2"
+        verbose && @info "Control scenario NOT set, guessing the value of control2"
         0.5
     end
 
@@ -527,7 +529,7 @@ function simulate_one_case(ode_params::ODEparams, application::String, n_tor::In
 
     norm_t = reduce(vcat, (normalize_ode_results(u, ode_params, control2, control1, control_type)'
                             for u in sol.u))
-    println("final normalized solution = ", norm_t[end, :])
+    verbose && println("final normalized solution = ", norm_t[end, :])
 
     return sol, norm_t
 end
