@@ -50,7 +50,8 @@ frozen via `Flux.freeze!`, as used by `transfer_learn_locking_nn`); if
 omitted, a fresh `Adam` optimizer state is created for the whole model.
 """
 function _fit_nn_model(model, X::Matrix{Float32}, y::Matrix{Float32}, nn_params::NNparams;
-                        opt_state = Flux.setup(Adam(nn_params.learning_rate), model))
+                        opt_state = Flux.setup(Adam(nn_params.learning_rate), model),
+                        verbose::Bool = true)
     use_val = nn_params.val_fraction > 0.0
 
     if use_val
@@ -84,13 +85,13 @@ function _fit_nn_model(model, X::Matrix{Float32}, y::Matrix{Float32}, nn_params:
             else
                 n_wait += 1
                 if n_wait >= nn_params.patience
-                    @info "  Early stopping at epoch $epoch  best_val=$(round(best_val; digits=4))"
+                    verbose && @info "  Early stopping at epoch $epoch  best_val=$(round(best_val; digits=4))"
                     break
                 end
             end
-            epoch % 20 == 0 && @info "  NN epoch $epoch/$(nn_params.n_epochs)  val=$(round(val; digits=4))"
+            verbose && epoch % 20 == 0 && @info "  NN epoch $epoch/$(nn_params.n_epochs)  val=$(round(val; digits=4))"
         else
-            epoch % 20 == 0 && @info "  NN epoch $epoch/$(nn_params.n_epochs)  loss=$(round(Flux.binarycrossentropy(model(X), y); digits=4))"
+            verbose && epoch % 20 == 0 && @info "  NN epoch $epoch/$(nn_params.n_epochs)  loss=$(round(Flux.binarycrossentropy(model(X), y); digits=4))"
         end
     end
     return best_model
@@ -98,7 +99,7 @@ end
 
 
 """
-    train_locking_nn(results::LockingResults, ode_params::ODEparams, nn_params=NNparams()) → LockingNNModel
+    train_locking_nn(results::LockingResults, ode_params::ODEparams, nn_params=NNparams(); verbose=true) → LockingNNModel
 
 Train a binary NN classifier (C1, C2) → P(locked) on the k-means labels in
 `results`. Updates `results.prob` in-place and returns the trained model.
@@ -106,12 +107,13 @@ Train a binary NN classifier (C1, C2) → P(locked) on the k-means labels in
 The returned model is callable: `model(C1, C2)` ∈ [0, 1].
 To search for better hyperparameters first, call `tune_locking_nn(results, ode_params)`.
 """
-function train_locking_nn(results::LockingResults, ode_params::ODEparams, nn_params::NNparams=NNparams())
+function train_locking_nn(results::LockingResults, ode_params::ODEparams, nn_params::NNparams=NNparams();
+                           verbose::Bool=true)
     X, y = prepare_nn_data(results.locking_labels, ode_params.Control1, ode_params.Control2)
 
-    @info "Training NN: architecture=$(nn_params.hidden_sizes)  epochs=$(nn_params.n_epochs)"
-    model = _fit_nn_model(build_locking_nn(nn_params), X, y, nn_params)
-    @info "NN training complete. Final loss=$(round(Flux.binarycrossentropy(model(X), y); digits=4))"
+    verbose && @info "Training NN: architecture=$(nn_params.hidden_sizes)  epochs=$(nn_params.n_epochs)"
+    model = _fit_nn_model(build_locking_nn(nn_params), X, y, nn_params; verbose)
+    verbose && @info "NN training complete. Final loss=$(round(Flux.binarycrossentropy(model(X), y); digits=4))"
 
     prob_model = LockingNNModel(model, nn_params)
     results.prob = prob_model
@@ -120,7 +122,7 @@ end
 
 
 """
-    transfer_learn_locking_nn(base_model, X_new, y_new; nn_params=base_model.nn_params) → LockingNNModel
+    transfer_learn_locking_nn(base_model, X_new, y_new; nn_params=base_model.nn_params, verbose=true) → LockingNNModel
 
 Fine-tune `base_model` (typically loaded via `load_locking_nn()`) on new
 `(X_new, y_new)` data from a different equilibrium/`dd`, freezing every
@@ -133,7 +135,8 @@ original full training. Returns a new `LockingNNModel`; does not mutate
 """
 function transfer_learn_locking_nn(base_model::LockingNNModel,
                                     X_new::Matrix{Float32}, y_new::Matrix{Float32};
-                                    nn_params::NNparams = base_model.nn_params)
+                                    nn_params::NNparams = base_model.nn_params,
+                                    verbose::Bool = true)
     model     = deepcopy(base_model.model)
     opt_state = Flux.setup(Adam(nn_params.learning_rate), model)
 
@@ -142,9 +145,9 @@ function transfer_learn_locking_nn(base_model::LockingNNModel,
         Flux.freeze!(opt_state.layers[i])
     end
 
-    @info "Transfer learning: fine-tuning last layer only ($(length(model.layers)) total layers, $(nn_params.n_epochs) epochs)"
-    fine_tuned = _fit_nn_model(model, X_new, y_new, nn_params; opt_state=opt_state)
-    @info "Transfer learning complete. Final loss=$(round(Flux.binarycrossentropy(fine_tuned(X_new), y_new); digits=4))"
+    verbose && @info "Transfer learning: fine-tuning last layer only ($(length(model.layers)) total layers, $(nn_params.n_epochs) epochs)"
+    fine_tuned = _fit_nn_model(model, X_new, y_new, nn_params; opt_state=opt_state, verbose)
+    verbose && @info "Transfer learning complete. Final loss=$(round(Flux.binarycrossentropy(fine_tuned(X_new), y_new); digits=4))"
 
     return LockingNNModel(fine_tuned, nn_params)
 end
@@ -152,7 +155,7 @@ end
 
 """
     tune_locking_nn(results::LockingResults, ode_params::ODEparams; n_trials=20, n_folds=3,
-                    rng=GLOBAL_RNG) → NNparams
+                    rng=GLOBAL_RNG, verbose=true) → NNparams
 
 Random hyperparameter search using k-fold CV on `results`/`ode_params`.
 After finding the best configuration, retrains the full model with those
@@ -161,7 +164,7 @@ hyperparameters and updates `results.prob` in-place.
 Returns the best `NNparams` (useful for Task 2 transfer learning).
 """
 function tune_locking_nn(results::LockingResults, ode_params::ODEparams; n_trials::Int=20, n_folds::Int=3,
-                          rng::AbstractRNG=Random.GLOBAL_RNG)
+                          rng::AbstractRNG=Random.GLOBAL_RNG, verbose::Bool=true)
     X, y = prepare_nn_data(results.locking_labels, ode_params.Control1, ode_params.Control2)
 
     # Search space — mirrors Python's RandomizedSearchCV param_dist
@@ -176,7 +179,7 @@ function tune_locking_nn(results::LockingResults, ode_params::ODEparams; n_trial
     best_params = NNparams()
     best_loss   = Inf
 
-    @info "Hyperparameter search: $n_trials trials, $n_folds-fold CV"
+    verbose && @info "Hyperparameter search: $n_trials trials, $n_folds-fold CV"
     for trial in 1:n_trials
         params = NNparams(
             hidden_sizes  = rand(rng, hidden_pool),
@@ -193,19 +196,19 @@ function tune_locking_nn(results::LockingResults, ode_params::ODEparams; n_trial
         for k in 1:n_folds
             val_idx   = ((k-1)*fold_size + 1):min(k*fold_size, N)
             train_idx = setdiff(1:N, val_idx)
-            m = _fit_nn_model(build_locking_nn(params), X[:, train_idx], y[:, train_idx], params)
+            m = _fit_nn_model(build_locking_nn(params), X[:, train_idx], y[:, train_idx], params; verbose)
             cv_loss += Flux.binarycrossentropy(m(X[:, val_idx]), y[:, val_idx])
         end
         cv_loss /= n_folds
 
-        @info "  Trial $trial/$n_trials  cv_loss=$(round(cv_loss; digits=4))  arch=$(params.hidden_sizes)  lr=$(round(params.learning_rate;sigdigits=2))  wd=$(round(params.weight_decay;sigdigits=2))"
+        verbose && @info "  Trial $trial/$n_trials  cv_loss=$(round(cv_loss; digits=4))  arch=$(params.hidden_sizes)  lr=$(round(params.learning_rate;sigdigits=2))  wd=$(round(params.weight_decay;sigdigits=2))"
         if cv_loss < best_loss
             best_loss   = cv_loss
             best_params = params
         end
     end
 
-    @info "Best: arch=$(best_params.hidden_sizes)  act=$(best_params.activation)  lr=$(best_params.learning_rate)  CV_loss=$(round(best_loss; digits=4))"
+    verbose && @info "Best: arch=$(best_params.hidden_sizes)  act=$(best_params.activation)  lr=$(best_params.learning_rate)  CV_loss=$(round(best_loss; digits=4))"
 
     # Retrain on full data restoring full epoch count (CV used half)
     full_params = NNparams(
@@ -217,8 +220,8 @@ function tune_locking_nn(results::LockingResults, ode_params::ODEparams; n_trial
         weight_decay  = best_params.weight_decay,
         patience      = best_params.patience,
     )
-    @info "Retraining final model ($(full_params.n_epochs) epochs)..."
-    train_locking_nn(results, ode_params, full_params)
+    verbose && @info "Retraining final model ($(full_params.n_epochs) epochs)..."
+    train_locking_nn(results, ode_params, full_params; verbose)
     return full_params
 end
 
@@ -299,7 +302,7 @@ Assign the result to `results.prob` to use it with `plot_probability` and
 - `window_C2` : kernel width along the C2 (EF/Δ'/α) axis (must be odd).
 """
 function conv_locking_probability(results::LockingResults, ode_params::ODEparams, grid_size::Int;
-                                   window_C1::Int=5, window_C2::Int=5)
+                                   window_C1::Int=5, window_C2::Int=5, verbose::Bool=true)
     isodd(window_C1) || throw(ArgumentError("window_C1 must be odd, got $window_C1"))
     isodd(window_C2) || throw(ArgumentError("window_C2 must be odd, got $window_C2"))
 
@@ -311,7 +314,7 @@ function conv_locking_probability(results::LockingResults, ode_params::ODEparams
     C1_vals = unique(ode_params.Control1)
     C2_vals = unique(ode_params.Control2)
 
-    @info "Convolution probability computed ($(window_C1)×$(window_C2) box filter)"
+    verbose && @info "Convolution probability computed ($(window_C1)×$(window_C2) box filter)"
     return ConvProbModel(prob_grid, C1_vals, C2_vals)
 end
 
@@ -390,7 +393,7 @@ Uses the same `window_C1` / `window_C2` parameters as
 `conv_locking_probability`; the Gaussian σ along each axis is `window / 4`.
 """
 function kde_locking_probability(results::LockingResults, ode_params::ODEparams, grid_size::Int;
-                                  window_C1::Int=5, window_C2::Int=5)
+                                  window_C1::Int=5, window_C2::Int=5, verbose::Bool=true)
     isodd(window_C1) || throw(ArgumentError("window_C1 must be odd, got $window_C1"))
     isodd(window_C2) || throw(ArgumentError("window_C2 must be odd, got $window_C2"))
 
@@ -402,6 +405,6 @@ function kde_locking_probability(results::LockingResults, ode_params::ODEparams,
     C1_vals = unique(ode_params.Control1)
     C2_vals = unique(ode_params.Control2)
 
-    @info "KDE probability computed ($(window_C1)×$(window_C2) Gaussian, σ₁=$(window_C1/4), σ₂=$(window_C2/4))"
+    verbose && @info "KDE probability computed ($(window_C1)×$(window_C2) Gaussian, σ₁=$(window_C1/4), σ₂=$(window_C2/4))"
     return KDEProbModel(prob_grid, C1_vals, C2_vals)
 end

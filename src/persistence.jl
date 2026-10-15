@@ -13,7 +13,7 @@ const _locking_kde_cache  = Dict{String, KDEProbModel}()
 
 """
     save_ode_results(results::LockingResults, ode_params::ODEparams;
-                      control_type=:EF, filename=nothing, dir=LOCKING_RESULTS_DIR) → path
+                      control_type=:EF, filename=nothing, dir=LOCKING_RESULTS_DIR, verbose=true) → path
 
 Save the ODE grid results to disk so that `task=:calc_prob` can be run in a
 future session without re-solving the ODEs.  Saves: ode_sols, norm_sols,
@@ -25,7 +25,8 @@ When `filename` is omitted the file is named `ode_results_<control_type>.bson`
 function save_ode_results(results::LockingResults, ode_params::ODEparams;
                            control_type::Symbol          = :EF,
                            filename::Union{String,Nothing} = nothing,
-                           dir::String                     = LOCKING_RESULTS_DIR)
+                           dir::String                     = LOCKING_RESULTS_DIR,
+                           verbose::Bool                   = true)
     mkpath(dir)
     fname = filename === nothing ? "ode_results_$(control_type).bson" : filename
     path  = joinpath(dir, fname)
@@ -36,13 +37,13 @@ function save_ode_results(results::LockingResults, ode_params::ODEparams;
     Control1           = ode_params.Control1
     Control2           = ode_params.Control2
     BSON.@save path ode_sols norm_sols locking_labels bifurcation_bounds Control1 Control2
-    @info "Saved ODE results → $path"
+    verbose && @info "Saved ODE results → $path"
     return path
 end
 
 
 """
-    load_ode_results(; control_type=:EF, filename=nothing, dir=LOCKING_RESULTS_DIR)
+    load_ode_results(; control_type=:EF, filename=nothing, dir=LOCKING_RESULTS_DIR, verbose=true)
         → (results::LockingResults, Control1::Vector{Float64}, Control2::Vector{Float64})
 
 Load previously saved ODE results from disk. Callers (e.g. FUSE's
@@ -54,7 +55,8 @@ When `filename` is omitted the file is looked up as
 """
 function load_ode_results(; control_type::Symbol          = :EF,
                             filename::Union{String,Nothing} = nothing,
-                            dir::String                     = LOCKING_RESULTS_DIR)
+                            dir::String                     = LOCKING_RESULTS_DIR,
+                            verbose::Bool                   = true)
     fname = filename === nothing ? "ode_results_$(control_type).bson" : filename
     path  = joinpath(dir, fname)
     isfile(path) || error("No saved ODE results at $path — run task=:solve_system first")
@@ -66,14 +68,14 @@ function load_ode_results(; control_type::Symbol          = :EF,
         d[:locking_labels],
         d[:bifurcation_bounds],
     )
-    @info "Loaded ODE results ← $path"
+    verbose && @info "Loaded ODE results ← $path"
     return results, d[:Control1], d[:Control2]
 end
 
 
 """
     save_locking_nn(model::LockingNNModel; control_type=:EF, filename=nothing,
-                    dir=LOCKING_RESULTS_DIR) → path
+                    dir=LOCKING_RESULTS_DIR, verbose=true) → path
 
 Save a trained `LockingNNModel` to disk.
 Default location: `ModeLocking/data/`
@@ -84,7 +86,8 @@ function save_locking_nn(prob_model::LockingNNModel;
                           control_type::Symbol          = :EF,
                           nl_sat::Bool                  = false,
                           filename::Union{String,Nothing} = nothing,
-                          dir::String                     = LOCKING_RESULTS_DIR)
+                          dir::String                     = LOCKING_RESULTS_DIR,
+                          verbose::Bool                   = true)
     mkpath(dir)
     nl_suffix = nl_sat ? "_NLsat" : ""
     fname     = filename === nothing ? "nn_model_$(control_type)$(nl_suffix).bson" : filename
@@ -93,13 +96,13 @@ function save_locking_nn(prob_model::LockingNNModel;
     nn_params = prob_model.nn_params
     BSON.@save path model nn_params
     _locking_nn_cache[path] = prob_model   # keep cache coherent with disk
-    @info "Saved locking NN model → $path"
+    verbose && @info "Saved locking NN model → $path"
     return path
 end
 
 
 """
-    load_locking_nn(; control_type=:EF, filename=nothing, dir=LOCKING_RESULTS_DIR)
+    load_locking_nn(; control_type=:EF, filename=nothing, dir=LOCKING_RESULTS_DIR, verbose=true)
         → LockingNNModel
 
 Load a saved LockingNNModel from disk. Cached in memory after first load.
@@ -110,7 +113,8 @@ When `filename` is omitted the file is looked up as
 function load_locking_nn(; control_type::Symbol          = :EF,
                            nl_sat::Bool                  = false,
                            filename::Union{String,Nothing} = nothing,
-                           dir::String                     = LOCKING_RESULTS_DIR)
+                           dir::String                     = LOCKING_RESULTS_DIR,
+                           verbose::Bool                   = true)
     nl_suffix = nl_sat ? "_NLsat" : ""
     fname = filename === nothing ? "nn_model_$(control_type)$(nl_suffix).bson" : filename
     path  = joinpath(dir, fname)
@@ -119,14 +123,14 @@ function load_locking_nn(; control_type::Symbol          = :EF,
     d = BSON.load(path, @__MODULE__)
     prob_model = LockingNNModel(d[:model], d[:nn_params])
     _locking_nn_cache[path] = prob_model
-    @info "Loaded locking NN model ← $path"
+    verbose && @info "Loaded locking NN model ← $path"
     return prob_model
 end
 
 
 """
     save_conv_prob(prob_model::ConvProbModel; control_type=:EF, window_C1=5, window_C2=5,
-                    filename=nothing, dir=LOCKING_RESULTS_DIR) → path
+                    filename=nothing, dir=LOCKING_RESULTS_DIR, verbose=true) → path
 
 Save a `ConvProbModel` to disk.
 Default filename: `conv<w1>x<w2>_model_<control_type>.bson`.
@@ -137,7 +141,8 @@ function save_conv_prob(prob_model::ConvProbModel;
                          window_C1::Int                = 5,
                          window_C2::Int                = 5,
                          filename::Union{String,Nothing} = nothing,
-                         dir::String                     = LOCKING_RESULTS_DIR)
+                         dir::String                     = LOCKING_RESULTS_DIR,
+                         verbose::Bool                   = true)
     mkpath(dir)
     nl_suffix = nl_sat ? "_NLsat" : ""
     fname = filename === nothing ? "conv$(window_C1)x$(window_C2)_model_$(control_type)$(nl_suffix).bson" : filename
@@ -147,14 +152,14 @@ function save_conv_prob(prob_model::ConvProbModel;
     C2_vals   = prob_model.C2_vals
     BSON.@save path prob_grid C1_vals C2_vals
     _locking_conv_cache[path] = prob_model   # keep cache coherent with disk
-    @info "Saved convolution probability model → $path"
+    verbose && @info "Saved convolution probability model → $path"
     return path
 end
 
 
 """
     load_conv_prob(; control_type=:EF, window_C1=5, window_C2=5, filename=nothing,
-                    dir=LOCKING_RESULTS_DIR) → ConvProbModel
+                    dir=LOCKING_RESULTS_DIR, verbose=true) → ConvProbModel
 
 Load a saved `ConvProbModel` from disk.  Cached in memory after first load.
 Default filename: `conv<w1>x<w2>_model_<control_type>.bson`.
@@ -164,7 +169,8 @@ function load_conv_prob(; control_type::Symbol          = :EF,
                           window_C1::Int                = 5,
                           window_C2::Int                = 5,
                           filename::Union{String,Nothing} = nothing,
-                          dir::String                     = LOCKING_RESULTS_DIR)
+                          dir::String                     = LOCKING_RESULTS_DIR,
+                          verbose::Bool                   = true)
     nl_suffix = nl_sat ? "_NLsat" : ""
     fname = filename === nothing ? "conv$(window_C1)x$(window_C2)_model_$(control_type)$(nl_suffix).bson" : filename
     path  = joinpath(dir, fname)
@@ -173,14 +179,14 @@ function load_conv_prob(; control_type::Symbol          = :EF,
     d = BSON.load(path, @__MODULE__)
     prob_model = ConvProbModel(d[:prob_grid], d[:C1_vals], d[:C2_vals])
     _locking_conv_cache[path] = prob_model
-    @info "Loaded convolution probability model ← $path"
+    verbose && @info "Loaded convolution probability model ← $path"
     return prob_model
 end
 
 
 """
     save_kde_prob(prob_model::KDEProbModel; control_type=:EF, window_C1=5, window_C2=5,
-                   filename=nothing, dir=LOCKING_RESULTS_DIR) → path
+                   filename=nothing, dir=LOCKING_RESULTS_DIR, verbose=true) → path
 
 Save a `KDEProbModel` to disk.
 Default filename: `kde<w1>x<w2>_model_<control_type>.bson`.
@@ -191,7 +197,8 @@ function save_kde_prob(prob_model::KDEProbModel;
                         window_C1::Int                = 5,
                         window_C2::Int                = 5,
                         filename::Union{String,Nothing} = nothing,
-                        dir::String                     = LOCKING_RESULTS_DIR)
+                        dir::String                     = LOCKING_RESULTS_DIR,
+                        verbose::Bool                   = true)
     mkpath(dir)
     nl_suffix = nl_sat ? "_NLsat" : ""
     fname = filename === nothing ? "kde$(window_C1)x$(window_C2)_model_$(control_type)$(nl_suffix).bson" : filename
@@ -201,14 +208,14 @@ function save_kde_prob(prob_model::KDEProbModel;
     C2_vals   = prob_model.C2_vals
     BSON.@save path prob_grid C1_vals C2_vals
     _locking_kde_cache[path] = prob_model   # keep cache coherent with disk
-    @info "Saved KDE probability model → $path"
+    verbose && @info "Saved KDE probability model → $path"
     return path
 end
 
 
 """
     load_kde_prob(; control_type=:EF, window_C1=5, window_C2=5, filename=nothing,
-                   dir=LOCKING_RESULTS_DIR) → KDEProbModel
+                   dir=LOCKING_RESULTS_DIR, verbose=true) → KDEProbModel
 
 Load a saved `KDEProbModel` from disk.  Cached in memory after first load.
 Default filename: `kde<w1>x<w2>_model_<control_type>.bson`.
@@ -218,7 +225,8 @@ function load_kde_prob(; control_type::Symbol          = :EF,
                          window_C1::Int                = 5,
                          window_C2::Int                = 5,
                          filename::Union{String,Nothing} = nothing,
-                         dir::String                     = LOCKING_RESULTS_DIR)
+                         dir::String                     = LOCKING_RESULTS_DIR,
+                         verbose::Bool                   = true)
     nl_suffix = nl_sat ? "_NLsat" : ""
     fname = filename === nothing ? "kde$(window_C1)x$(window_C2)_model_$(control_type)$(nl_suffix).bson" : filename
     path  = joinpath(dir, fname)
@@ -227,6 +235,6 @@ function load_kde_prob(; control_type::Symbol          = :EF,
     d = BSON.load(path, @__MODULE__)
     prob_model = KDEProbModel(d[:prob_grid], d[:C1_vals], d[:C2_vals])
     _locking_kde_cache[path] = prob_model
-    @info "Loaded KDE probability model ← $path"
+    verbose && @info "Loaded KDE probability model ← $path"
     return prob_model
 end
